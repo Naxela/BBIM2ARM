@@ -24,12 +24,13 @@ bl_info = {
     "doc_url": "",
 }
 
-import bpy, blenderbim, ifcopenshell, os, csv, json, sys
+import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil
 import blenderbim.bim.module.root.prop as root_prop
 from bpy.types import Panel
 from blenderbim.bim.ifc import IfcStore
 from blenderbim.bim.module.root.data import IfcClassData
 import blenderbim.tool as tool
+
 from mathutils import Euler
 
 from bpy.utils import ( register_class, unregister_class )
@@ -52,6 +53,7 @@ from bpy.types import (
 #Todo
 ifc_loaded = False
 ifc_configured = False
+storeys = []
 
 def getProjectFolder():
 
@@ -190,7 +192,21 @@ def exposeProperties(obj):
     obj.arm_propertylist[-1].name_prop = "BIMDATA"
     obj.arm_propertylist[-1].string_prop = json.dumps(propsets, ensure_ascii=False)
 
+class B2A_LoadIFC(bpy.types.Operator):
+    bl_idname = "b2a.load"
+    bl_label = "Load IFC file"
+    bl_description = "Load an IFC file"
+    bl_options = {'REGISTER', 'UNDO'}
 
+def execute(self, context):
+
+    scene = context.scene
+
+    print("Load IFC")
+
+    #bpy.ops.bim.load_project()
+
+    return {'FINISHED'}
 
 class B2A_Prepare(bpy.types.Operator):
     bl_idname = "b2a.prepare"
@@ -406,6 +422,28 @@ class B2A_Prepare(bpy.types.Operator):
 
                         obj.rigid_body.type = "PASSIVE"
 
+        #Get storeys into array
+        for obj in scene.objects:
+
+            IfcStore.get_file()
+
+            if not IfcClassData.is_loaded:
+                IfcClassData.load()
+
+            element = tool.Ifc.get_entity(obj) #Product
+
+            if element.is_a() == "IfcBuildingStorey":
+
+                storeys.append(obj)
+
+        for index, storey in enumerate(storeys):
+            #print(str(index) + " : " + storey.name)
+
+            bpy.types.Scene.storeys.append(bpy.props.StringProperty(name=storey.name, description="", default="", subtype="FILE_PATH"))
+
+        for storey in bpy.types.Scene.storeys:
+            print(storey)
+
         return {'FINISHED'}
 
 class B2A_Play(bpy.types.Operator):
@@ -509,13 +547,26 @@ class B2A_Configure(bpy.types.Operator):
                 mainCam.rotation_euler = (1.57,0,0)
                 
             mainCam.arm_traitlist.add()
-            mainCam.arm_traitlist[0].type_prop = "Bundled Script"
-            mainCam.arm_traitlist[0].class_name_prop = "WalkNavigation"
-            mainCam.data.lens = 18.0
-            bpy.context.scene.camera = mainCam
+            
+            #Copy FlyNavigation trait
+            flyNavFile = getAddonFolder() + "/scripts/FlyNavigation.hx"
+            armSourcesFolder = getProjectFolder() + "/Sources/arm/"
+            shutil.copy(flyNavFile, armSourcesFolder)
+
+            mainCam.arm_traitlist[0].type_prop = "Haxe Script"
+            mainCam.arm_traitlist[0].class_name_prop = "FlyNavigation"
 
             mainCam.select_set(True)
             bpy.context.view_layer.objects.active = mainCam
+
+            bpy.ops.arm.refresh_scripts()
+            context.area.tag_redraw()
+
+            #mainCam.arm_traitlist[0].arm_traitpropslist[0].value_float = 5.0 #Speed
+            #mainCam.arm_traitlist[0].arm_traitpropslist[0].value_float = 1.0 #Ease
+
+            mainCam.data.lens = 18.0
+            bpy.context.scene.camera = mainCam
 
             if scene.align_camera:
                 bpy.ops.view3d.camera_to_view()
@@ -525,7 +576,16 @@ class B2A_Configure(bpy.types.Operator):
         #Setup sun
         if scene.setup_sun:
             bpy.ops.object.light_add(type='SUN', radius=1, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
-            bpy.data.objects["Sun"].rotation_euler = (0.69, 0, -0.52)
+
+            if scene.world_type == "Dynamic":
+                bpy.data.objects["Sun"].rotation_euler = (0.69, 0, -0.52)
+            if scene.world_type == "Sunrise":
+                bpy.data.objects["Sun"].rotation_euler = (1.57, -0.02, 0.96)
+            if scene.world_type == "Sunny":
+                bpy.data.objects["Sun"].rotation_euler = (0.825, 0.0092, 0.96)
+            if scene.world_type == "Cloudy":
+                bpy.data.objects["Sun"].rotation_euler = (0.53, -0.21, 0.855)
+
             bpy.data.lights["Sun"].energy = scene.sun_strength
 
         #Setup world
@@ -537,15 +597,24 @@ class B2A_Configure(bpy.types.Operator):
                 skytex = bpy.context.scene.world.node_tree.nodes.new("ShaderNodeTexSky")
                 bg = bpy.context.scene.world.node_tree.nodes["Background"]
                 bpy.context.scene.world.node_tree.links.new(bg.inputs[0], skytex.outputs[0])
-                skytex.sun_size = 0.05 + (scene.sun_strength/10)
+                skytex.sun_size = 0.01 # + (scene.sun_strength/10)
 
             else:
 
-                skytex = bpy.context.scene.world.node_tree.nodes.new("ShaderNodeTexImage")
+                skytex = bpy.context.scene.world.node_tree.nodes.new("ShaderNodeTexEnvironment")
                 bg = bpy.context.scene.world.node_tree.nodes["Background"]
                 bpy.context.scene.world.node_tree.links.new(bg.inputs[0], skytex.outputs[0])
-                envFile = getAddonFolder() + "environments/Cloudy.hdri"
-                skytex.image.filepath_raw = envFile
+
+                if scene.world_type == "Sunrise":
+                    envFile = getAddonFolder() + "/environments/Sunrise.hdr"
+                if scene.world_type == "Sunny":
+                    envFile = getAddonFolder() + "/environments/Sunny.hdr"
+                if scene.world_type == "Cloudy":
+                    envFile = getAddonFolder() + "/environments/Cloudy.hdr"
+
+                skytexImage = bpy.data.images.load(envFile)
+
+                skytex.image = skytexImage
 
         #Setup EEVEE View
         scene.eevee.use_gtao = True
@@ -562,14 +631,6 @@ class B2A_Configure(bpy.types.Operator):
                             space.shading.type = 'MATERIAL'
                             space.shading.use_scene_world = True
                             space.shading.use_scene_lights = True
-
-        #area = next(area for area in bpy.context.screen.areas if area.type == 'VIEW_3D')
-        #space = next(space for space in area.spaces if space.type == 'VIEW_3D')
-        #space.viewport_shade = 'MATERIAL'  # set the viewport shading
-
-        #bpy.data.screens["Layout"].shading.use_scene_lights = True
-        #bpy.data.screens["Layout"].shading.use_scene_world = True
-        #bpy.data.screens["Layout"].shading.type = "MATERIAL"
 
         #Setup renderpath
         bpy.ops.arm_rplist.new_item()
@@ -663,6 +724,17 @@ class SCENE_PT_B2A_panel (Panel):
 
         box = layout.box()
         row = box.row(align=True)
+
+        row.label(text="Load IFC", icon="UV_DATA")
+        row = box.row(align=True)
+        if scene.BIMProperties.ifc_file == "":
+            row.operator("b2a.load")
+        else:
+            row.label(text="IFC File: ")
+            row.label(text=os.path.basename(scene.BIMProperties.ifc_file))
+        
+        box = layout.box()
+        row = box.row(align=True)
         row.label(text="Prepare IFC", icon="UV_DATA")
         row = box.row(align=True)
         row.prop(scene, "remove_aux_collections")
@@ -737,6 +809,37 @@ class SCENE_PT_B2A_panel (Panel):
 
         row.operator("b2a.configure")
 
+
+        #Plan alignment tool
+        if scene.ui_mode == "Advanced":
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text="Plan alignment tool", icon="FILE_CACHE")
+
+            for idx, storey in enumerate(storeys):
+                row = box.row(align=True)
+                row.label(text=storey.name)
+                #row.prop(scene, "storeys")
+                row.prop(scene, "storeys['" + str(idx) + "']")
+
+                #col.prop(context.active_object, '["' + MinkoScript.format_property_name(i, key) + '"]',text='')
+
+
+            #if 
+            
+            # for obj in scene.objects:
+
+            #     IfcStore.get_file()
+    
+            #     if not IfcClassData.is_loaded:
+            #         IfcClassData.load()
+                    
+            #     element = tool.Ifc.get_entity(obj) #Product
+
+            #     if element.is_a() == "IfcBuildingStorey":
+
+            #         row.label(text="Plan: " + obj.name)
+
         box = layout.box()
         row = box.row(align=True)
         row.label(text="Start Armory", icon="FILE_CACHE")
@@ -753,7 +856,7 @@ class SCENE_PT_B2A_panel (Panel):
         row = box.row(align=True)
         row.operator("b2a.deploy")
 
-classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy]
+classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC]
 
 def register():
     for cls in classes:
@@ -767,6 +870,12 @@ def register():
     bpy.types.Scene.remove_aux_collections = bpy.props.BoolProperty(name="Remove Auxillary Collections", default=True, description="Remove the extra collections that are linked internally. Might break if not toggled or prepared manually")
     bpy.types.Scene.remove_annotations = bpy.props.BoolProperty(name="Remove annotations", default=True, description="Remove all 2D annotations from the file")
     bpy.types.Scene.remove_spaces = bpy.props.BoolProperty(name="Remove spaces", default=True, description="Remove all spaces from the file")
+    
+    bpy.types.Scene.space_setup = EnumProperty(
+        items = [('None', 'None', 'None'),
+                 ('Spatial', 'Spatial Volumes', '')],
+                name = "", description="Method for assigning IFC materials", default='None')
+    
     bpy.types.Scene.remove_grids = bpy.props.BoolProperty(name="Remove grids", default=True, description="Remove all grids from the file")
     bpy.types.Scene.convert_materials = bpy.props.BoolProperty(name="Convert materials", default=True, description="Converts IFC materials")
     bpy.types.Scene.material_setup = EnumProperty(
@@ -787,9 +896,9 @@ def register():
     bpy.types.Scene.camera_speed = bpy.props.FloatProperty(name="Camera speed", description="Set the camera speed", default=5.0)
     bpy.types.Scene.camera_easing = bpy.props.FloatProperty(name="Camera easing", description="Set the camera movement easing", default=1.0)
     
+    #bpy.types.Scene.camera_easing = bpy.props.StringProperty(name="OIDN Path", description="The path to the OIDN binaries", default="", subtype="FILE_PATH")
     
-    
-    bpy.types.Scene.align_camera = bpy.props.BoolProperty(name="Align camera to view", default=True, description="Align the camera to the active view")
+    bpy.types.Scene.align_camera = bpy.props.BoolProperty(name="Align camera to view", default=False, description="Align the camera to the active view")
     bpy.types.Scene.setup_sun = bpy.props.BoolProperty(name="Setup sun", default=True, description="Setup sun")
     bpy.types.Scene.sun_strength = bpy.props.FloatProperty(name="Sun strength", description="Set sun strength", default=3.0)
     bpy.types.Scene.sun_volumetric = bpy.props.BoolProperty(name="Volumetric Lighting", default=False, description="Add volumetric lighting (God rays)")
@@ -816,6 +925,8 @@ def register():
         items = [('Executable', 'Executable', 'Create a platform specific executable, ie. ".exe" file for Windows'),
                  ('HTML5', 'HTML5', 'Create a web export file. You need a server to view the file')],
                 name = "", description="Select platform to deploy to", default='Executable')
+
+    bpy.types.Scene.storeys = []
     
 
 def unregister():
