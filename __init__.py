@@ -54,6 +54,7 @@ from bpy.types import (
 ifc_loaded = False
 ifc_configured = False
 storeys = []
+deployed = False
 
 def getProjectFolder():
 
@@ -198,15 +199,32 @@ class B2A_LoadIFC(bpy.types.Operator):
     bl_description = "Load an IFC file"
     bl_options = {'REGISTER', 'UNDO'}
 
-def execute(self, context):
+    def execute(self, context):
 
-    scene = context.scene
+        scene = context.scene
 
-    print("Load IFC")
+        print("Load IFC")
 
-    #bpy.ops.bim.load_project()
+        #bpy.ops.bim.load_project()
+        bpy.ops.import_ifc.bim()
 
-    return {'FINISHED'}
+        return {'FINISHED'}
+
+class B2A_Explore(bpy.types.Operator):
+    bl_idname = "b2a.explore"
+    bl_label = "Open deployment"
+    bl_description = "Explore the deployed files"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        scene = context.scene
+
+        print("Load IFC")
+
+        bpy.ops.arm.exporter_open_folder()
+
+        return {'FINISHED'}
 
 class B2A_Prepare(bpy.types.Operator):
     bl_idname = "b2a.prepare"
@@ -438,11 +456,37 @@ class B2A_Prepare(bpy.types.Operator):
 
         for index, storey in enumerate(storeys):
             #print(str(index) + " : " + storey.name)
-
-            bpy.types.Scene.storeys.append(bpy.props.StringProperty(name=storey.name, description="", default="", subtype="FILE_PATH"))
+            pass
+            #bpy.types.Scene.storeys.append(bpy.props.StringProperty(name=storey.name, description="", default="", subtype="FILE_PATH"))
 
         for storey in bpy.types.Scene.storeys:
             print(storey)
+
+        #TODO: Clean empty collections
+
+        return {'FINISHED'}
+
+class B2A_MakeLocal(bpy.types.Operator):
+    bl_idname = "b2a.make_local"
+    bl_label = "Make local"
+    bl_description = "Make selection local"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        scene = context.scene
+
+        #TODO - Go through all the links: IFC Project Setup > IFC Links and remove links
+        #Get the file location, append all objects, localize the objects and add it to a separate location
+        #
+
+        for obj in bpy.context.selected_objects:
+
+            #Get linked filename and make collection
+
+            bpy.context.view_layer.objects.active = obj
+            obj.make_local()
+
 
         return {'FINISHED'}
 
@@ -479,11 +523,14 @@ class B2A_Deploy(bpy.types.Operator):
         scene = context.scene
 
         if scene.platform == "Executable":
-            bpy.data.worlds['Arm'].arm_exporterlist[0].arm_project_target == "krom-windows"
-        else:
-            pass
+            print("Exporting executable")
+            bpy.data.worlds['Arm'].arm_exporterlist[0].arm_project_target = "krom-windows"
+        elif scene.platform == "HTML5":
+            print("Exporting HTML5/Web")
+            bpy.data.worlds['Arm'].arm_exporterlist[0].arm_project_target = "html5"
 
         bpy.ops.arm.publish_project()
+        deployed = True
 
         return {'FINISHED'}
 
@@ -496,7 +543,7 @@ class B2A_Configure(bpy.types.Operator):
 
     @classmethod
     def poll(self,context):
-        return context.object is not None
+        return context.object is not None and bpy.data.is_saved
 
     def execute(self, context):
 
@@ -519,6 +566,8 @@ class B2A_Configure(bpy.types.Operator):
 
             #If plan exists, align to camera to plan and provide a WalkNavigation trait
             camPlanAlignment = "Plan 01"
+
+            storeyLocation = (0,0,0)
 
             for obj in bpy.context.scene.objects:
                 
@@ -550,7 +599,14 @@ class B2A_Configure(bpy.types.Operator):
             
             #Copy FlyNavigation trait
             flyNavFile = getAddonFolder() + "/scripts/FlyNavigation.hx"
+
+
+
             armSourcesFolder = getProjectFolder() + "/Sources/arm/"
+
+            #Make folder is it doesn't exist
+            os.makedirs(os.path.dirname(armSourcesFolder), exist_ok=True)
+
             shutil.copy(flyNavFile, armSourcesFolder)
 
             mainCam.arm_traitlist[0].type_prop = "Haxe Script"
@@ -810,6 +866,14 @@ class SCENE_PT_B2A_panel (Panel):
         row.operator("b2a.configure")
 
 
+        #Make links local
+        if scene.ui_mode == "Advanced":
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text="Localize linked files", icon="FILE_CACHE")
+            row = box.row(align=True)
+            row.operator("b2a.make_local")
+
         #Plan alignment tool
         if scene.ui_mode == "Advanced":
             box = layout.box()
@@ -855,8 +919,11 @@ class SCENE_PT_B2A_panel (Panel):
         row.prop(scene, "platform")
         row = box.row(align=True)
         row.operator("b2a.deploy")
+        if deployed == True:
+            row = box.row(align=True)
+            row.operator("b2a.explore")
 
-classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC]
+classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC, B2A_Explore, B2A_MakeLocal]
 
 def register():
     for cls in classes:
@@ -952,6 +1019,9 @@ It's of course free and open-source.
 
 
 TODO:
+- Links not yet working (Append for now)
 - comma separated exclusion of IFC classes
-
+- Door / Window tool
+- Prepare: Grid
+- Spaces to Volumes
 '''
