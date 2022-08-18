@@ -279,6 +279,44 @@ def getObjElement(obj):
 
     return element
 
+def getparentCollectionNames(collection, parent_names):
+    for parent_collection in bpy.data.collections:
+        if collection.name in parent_collection.children.keys():
+        
+            if "/" in parent_collection.name:
+                
+                ifcClass = parent_collection.name.split("/")[0]
+                ifcName = parent_collection.name.split("/")[1]
+                
+                #print(ifcClass)
+                #print(ifcName)
+                
+                if ifcName == "":
+                    parent_names.append(ifcClass)
+                else:
+                    parent_names.append(ifcName)
+      
+            getparentCollectionNames(parent_collection, parent_names)
+        
+            return
+
+def getParentHierarchy(obj):
+    parent_collection = obj.users_collection[0]
+    parent_names      = []
+    
+    if "/" in parent_collection.name:
+        ifcClass = parent_collection.name.split("/")[0]
+        ifcName = parent_collection.name.split("/")[1]
+        
+        if ifcName == "":
+            parent_names.append(ifcClass)
+        else:
+            parent_names.append(ifcName)
+    
+    getparentCollectionNames(parent_collection, parent_names)
+    parent_names.reverse()
+    return '\\'.join(parent_names)
+
 def exposeProperties(obj):
     bpy.context.view_layer.objects.active = obj
     
@@ -356,6 +394,10 @@ def exposeProperties(obj):
     obj.arm_propertylist.add()
     obj.arm_propertylist[-1].name_prop = "BIMDATA"
     obj.arm_propertylist[-1].string_prop = json.dumps(propsets, ensure_ascii=False)
+
+    obj.arm_propertylist.add()
+    obj.arm_propertylist[-1].name_prop = "BIMHIERARCHY"
+    obj.arm_propertylist[-1].string_prop = getParentHierarchy(obj)
 
 class B2A_LoadIFC(bpy.types.Operator):
     bl_idname = "b2a.load"
