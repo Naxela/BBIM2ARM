@@ -24,7 +24,7 @@ bl_info = {
     "doc_url": "",
 }
 
-import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil
+import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil, platform, webbrowser
 import blenderbim.bim.module.root.prop as root_prop
 from bpy.types import Panel
 from blenderbim.bim.ifc import IfcStore
@@ -197,13 +197,13 @@ class FlyNavigation extends Trait {
 		var d = Time.delta * speed * fast * ease;
 		if (d > 0.0) camera.transform.move(dir, d);
 
-		if (mouse.down()) {
+		if (mouse.down('right')) {
 			#if arm_yaxisup
-			camera.transform.rotate(Vec4.yAxis(), -mouse.movementX / 200);
+			camera.transform.rotate(Vec4.yAxis(), 0.45 * -mouse.movementX / 200);
 			#else
-			camera.transform.rotate(Vec4.zAxis(), -mouse.movementX / 200);
+			camera.transform.rotate(Vec4.zAxis(), 0.45 * -mouse.movementX / 200);
 			#end
-			camera.transform.rotate(camera.right(), -mouse.movementY / 200);
+			camera.transform.rotate(camera.right(), 0.45 * -mouse.movementY / 200);
 		}
 	}
 
@@ -428,7 +428,31 @@ class B2A_Explore(bpy.types.Operator):
 
         print("Load IFC")
 
-        bpy.ops.arm.exporter_open_folder()
+        if not bpy.data.is_saved:
+            self.report({'INFO'}, "Please save your file first")
+            return {"CANCELLED"}
+
+        filepath = bpy.data.filepath
+        filename = os.path.splitext(os.path.basename(filepath))[0]
+        #dirpath = os.path.join(os.path.dirname(bpy.data.filepath), scene.TLM_EngineProperties.tlm_lightmap_savedir)
+        dirpath = os.path.join(os.path.dirname(filepath), ("build_" + filename), "debug")
+        
+        if platform.system() != "Linux":
+
+            if os.path.isdir(dirpath):
+                webbrowser.open('file://' + dirpath)
+            else:
+                os.mkdir(dirpath)
+                webbrowser.open('file://' + dirpath)
+        else:
+
+            if os.path.isdir(dirpath):
+                os.system('xdg-open "%s"' % dirpath)
+                #webbrowser.open('file://' + dirpath)
+            else:
+                os.mkdir(dirpath)
+                os.system('xdg-open "%s"' % dirpath)
+                #webbrowser.open('file://' + dirpath)
 
         return {'FINISHED'}
 
@@ -554,19 +578,20 @@ class B2A_Prepare(bpy.types.Operator):
                                 
                                 #node.inputs.get("Base Color")
                                 
-                                node.inputs[0].default_value = mat.diffuse_color
+                                node.inputs.get("Base Color").default_value = mat.diffuse_color
                                 
-                                node.inputs[5].default_value = 0.0
+                                node.inputs.get("Specular").default_value = 0.0
                                 
-                                node.inputs[7].default_value = mat.roughness
+                                node.inputs.get("Roughness").default_value = mat.roughness
 
-                                if node.inputs[0].default_value[3] < 0.99:
+                                if node.inputs.get("Base Color").default_value[3] < 0.99:
                                     
                                     mat.blend_method = "BLEND"
                                     mat.arm_blending = False
                                     mat.arm_cast_shadow = False
+                                    mat.arm_ignore_irradiance = True
 
-                                    node.inputs[19].default_value = node.inputs[0].default_value[3]
+                                    node.inputs.get("Alpha").default_value = node.inputs.get("Base Color").default_value[3]
 
 
             if scene.material_setup == "Replacement":
@@ -585,6 +610,24 @@ class B2A_Prepare(bpy.types.Operator):
                 scene.group_exclusion = bpy.data.texts[-1]
 
             #exclusion_classes = ['IfcWindow', 'IfcWall', 'IfcWallStandardCase', 'IfcDoor']
+            #TODO CHECK LINES COMMENTED OUT
+
+            #exclusion_string = scene.group_exclusion.as_string()
+
+            #lined_exclusion_string = exclusion_string.split('\n')
+
+            #for line in lined_exclusion_string:
+            #    if line.startswith("#"):
+            #        lined_exclusion_string.remove(line)
+            #        pass
+            #        #print(line)
+            #        
+
+            #print(lined_exclusion_string)
+
+            #exclusion_classes = exclusion_string.split(",")
+
+
             exclusion_string = scene.group_exclusion.as_string()
             exclusion_classes = exclusion_string.split(",")
 
@@ -607,6 +650,8 @@ class B2A_Prepare(bpy.types.Operator):
             bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
                     
             bpy.ops.object.join()
+
+            bpy.context.selected_objects[0].name = "PFGroup"
 
             if scene.expose_excluded_properties:
 
@@ -709,7 +754,16 @@ class B2A_Play(bpy.types.Operator):
         scene = context.scene
 
         #Setup exporter
-        bpy.ops.arm_exporterlist.new_item()
+
+        if "BIM2ARM_Exporter" in bpy.data.worlds["Arm"].arm_exporterlist:
+
+            pass
+
+        else:
+
+            bpy.ops.arm_exporterlist.new_item()
+
+            bpy.data.worlds["Arm"].arm_exporterlist[-1].name = "BIM2ARM_Exporter"
 
         bpy.ops.arm.play()
 
@@ -732,16 +786,59 @@ class B2A_Deploy(bpy.types.Operator):
 
         if scene.platform == "Executable":
             print("Exporting executable")
-            bpy.data.worlds['Arm'].arm_exporterlist[0].arm_project_target = "krom-windows"
+
+            if platform.system() == "Windows":
+
+                bpy.data.worlds['Arm'].arm_exporterlist["BIM2ARM_Exporter"].arm_project_target = "krom-windows"
+
+            elif scene.platform == "Linux":
+
+                bpy.data.worlds['Arm'].arm_exporterlist["BIM2ARM_Exporter"].arm_project_target = "krom-linux"
+
+            else:
+
+                bpy.data.worlds['Arm'].arm_exporterlist["BIM2ARM_Exporter"].arm_project_target = "krom-macos"
+
         elif scene.platform == "HTML5":
             print("Exporting HTML5/Web")
-            bpy.data.worlds['Arm'].arm_exporterlist[0].arm_project_target = "html5"
+            bpy.data.worlds['Arm'].arm_exporterlist["BIM2ARM_Exporter"].arm_project_target = "html5"
 
         bpy.ops.arm.publish_project()
         deployed = True
 
         return {'FINISHED'}
 
+class B2A_LightmapObjects(bpy.types.Operator):
+    bl_idname = "b2a.lightmap"
+    bl_label = "Lightmap Objects"
+    bl_description = "Lightmap available objects"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        scene = context.scene
+
+        print("Coming soon")
+
+        return {'FINISHED'}
+
+class B2A_CreateTemplateGroup(bpy.types.Operator):
+    bl_idname = "b2a.templategroup"
+    bl_label = "Add example file"
+    bl_description = "Add empty IFC Grouping template file"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(self,context):
+        return context.object is not None and bpy.data.is_saved
+
+    def execute(self, context):
+
+        bpy.ops.text.new()
+        bpy.data.texts[-1].name = "ExcludedIfcClasses"
+        scene.group_exclusion = bpy.data.texts[-1]
+
+        return {'FINISHED'}
 
 class B2A_Configure(bpy.types.Operator):
     bl_idname = "b2a.configure"
@@ -1094,17 +1191,24 @@ class SCENE_PT_B2A_panel (Panel):
             row = box.row(align=True)
             row.operator("b2a.make_local")
 
-        #Plan alignment tool
         if scene.ui_mode == "Advanced":
             box = layout.box()
             row = box.row(align=True)
-            row.label(text="Plan alignment tool", icon="FILE_CACHE")
+            row.label(text="Lightmap objects", icon="FILE_CACHE")
+            row = box.row(align=True)
+            row.operator("b2a.lightmap")
 
-            for idx, storey in enumerate(storeys):
-                row = box.row(align=True)
-                row.label(text=storey.name)
-                #row.prop(scene, "storeys")
-                row.prop(scene, "storeys['" + str(idx) + "']")
+        #Plan alignment tool
+        # if scene.ui_mode == "Advanced":
+        #     box = layout.box()
+        #     row = box.row(align=True)
+        #     row.label(text="Plan alignment tool", icon="FILE_CACHE")
+
+        #     for idx, storey in enumerate(storeys):
+        #         row = box.row(align=True)
+        #         row.label(text=storey.name)
+        #         #row.prop(scene, "storeys")
+        #         row.prop(scene, "storeys['" + str(idx) + "']")
 
                 #col.prop(context.active_object, '["' + MinkoScript.format_property_name(i, key) + '"]',text='')
 
@@ -1139,11 +1243,11 @@ class SCENE_PT_B2A_panel (Panel):
         row.prop(scene, "platform")
         row = box.row(align=True)
         row.operator("b2a.deploy")
-        if deployed == True:
-            row = box.row(align=True)
-            row.operator("b2a.explore")
+        #if deployed == True:
+        row = box.row(align=True)
+        row.operator("b2a.explore")
 
-classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC, B2A_Explore, B2A_MakeLocal]
+classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC, B2A_Explore, B2A_MakeLocal, B2A_LightmapObjects]
 
 def register():
     for cls in classes:
