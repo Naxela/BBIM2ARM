@@ -50,11 +50,12 @@ from bpy.types import (
     PropertyGroup,
 )
 
-#Todo
-ifc_loaded = False
-ifc_configured = False
-storeys = []
-deployed = False
+class B2A_Props(): #scene.b2a_props
+    ifc_loaded = False
+    ifc_configured = False
+    ifc_prepared = False
+    storeys = []
+    deployed = False
 
 def getProjectFolder():
 
@@ -241,6 +242,18 @@ def getAddonFolder():
             path = os.path.dirname(os.path.realpath(file))
             return path
 
+        if mod_name == "BIM2ARM":
+            mod = sys.modules[mod_name]
+            file = mod.__file__
+            path = os.path.dirname(os.path.realpath(file))
+            return path
+
+        if mod_name == "BIM2ARM-main":
+            mod = sys.modules[mod_name]
+            file = mod.__file__
+            path = os.path.dirname(os.path.realpath(file))
+            return path
+
 def getProperty(obj):
     
     IfcStore.get_file()
@@ -414,6 +427,8 @@ class B2A_LoadIFC(bpy.types.Operator):
         #bpy.ops.bim.load_project()
         bpy.ops.import_ifc.bim()
 
+        scene.b2a_props.ifc_loaded = True
+
         return {'FINISHED'}
 
 class B2A_Explore(bpy.types.Operator):
@@ -472,6 +487,9 @@ class B2A_Prepare(bpy.types.Operator):
         scene = context.scene
 
         print("Prepare IFC Started")
+
+        if scene.BIMProperties.ifc_file != "":
+            scene.b2a_props.ifc_loaded = True
 
         if scene.remove_aux_collections:
             print("Removing collections")
@@ -705,17 +723,23 @@ class B2A_Prepare(bpy.types.Operator):
 
             if element.is_a() == "IfcBuildingStorey":
 
-                storeys.append(obj)
+                print(obj.name)
 
-        for index, storey in enumerate(storeys):
-            #print(str(index) + " : " + storey.name)
-            pass
+                scene.b2a_props.storeys.append(obj)
+
+                #bpy.app.driver_namespace['b2a_storeys'].append(obj.name)
+
+        for index, storey in enumerate(scene.b2a_props.storeys):
+            print(str(index) + " : " + storey.name)
+            #pass
             #bpy.types.Scene.storeys.append(bpy.props.StringProperty(name=storey.name, description="", default="", subtype="FILE_PATH"))
 
-        for storey in bpy.types.Scene.storeys:
-            print(storey)
+        #for storey in bpy.app.driver_namespace['b2a_storeys']:
+            #print(storey)
 
         #TODO: Clean empty collections
+
+        scene.b2a_props.ifc_prepared = True
 
         return {'FINISHED'}
 
@@ -740,6 +764,154 @@ class B2A_MakeLocal(bpy.types.Operator):
             bpy.context.view_layer.objects.active = obj
             obj.make_local()
 
+
+        return {'FINISHED'}
+
+class B2A_ImportPlan(bpy.types.Operator):
+    bl_idname = "b2a.import_plan"
+    bl_label = "Import Plan"
+    bl_description = "Import the selected plan"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        selectedPlan = bpy.data.scenes["Scene"].levels
+
+        selectedPlanStorey = bpy.data.objects[selectedPlan]
+
+        PlanHeight = selectedPlanStorey.location.z
+        PlanRotation = selectedPlanStorey.rotation_euler.z
+
+        selectedFile = bpy.path.abspath(bpy.data.scenes["Scene"].levelPlan)
+
+        #projectedFolder = os.path.abspath(getProjectFolder())
+
+        fileLocation = selectedFile
+
+        fileName = os.path.basename(fileLocation)
+
+        baseName = fileName.split(".")[0]
+
+        fileExtension = fileName.split(".")[-1]
+
+        #if fileExtension == "pdf":
+        #    pass
+
+        if fileExtension in ["jpg","jpeg","png","tiff","bmp"]:
+
+            print("File found")
+
+            loaded_file = bpy.data.images.load(fileLocation, check_existing=False)
+
+        fsize_x = loaded_file.size[0]
+        fsize_y = loaded_file.size[1]
+
+        if bpy.data.scenes["Scene"].levelPlanDPI == "Low":
+            dpi = 72
+        elif bpy.data.scenes["Scene"].levelPlanDPI == "Medium":
+            dpi = 150
+        elif bpy.data.scenes["Scene"].levelPlanDPI == "High":
+            dpi = 300
+        elif bpy.data.scenes["Scene"].levelPlanDPI == "Presentation":
+            dpi = 600
+        else: #Custom
+            dpi = 1
+
+
+        if bpy.data.scenes["Scene"].levelScale == "a":
+            paperScale = 5
+        elif bpy.data.scenes["Scene"].levelScale == "b":
+            paperScale = 10
+        elif bpy.data.scenes["Scene"].levelScale == "c":
+            paperScale = 20
+        elif bpy.data.scenes["Scene"].levelScale == "d":
+            paperScale = 50
+        elif bpy.data.scenes["Scene"].levelScale == "e":
+            paperScale = 100
+        elif bpy.data.scenes["Scene"].levelScale == "f":
+            paperScale = 200
+        else:
+            paperScale = 50
+
+        #Units?
+        rsize_x = 2.54 * fsize_x / dpi
+        rsize_y = 2.54 * fsize_y / dpi
+
+        #Scale
+        ssize_x = rsize_x / 100
+        ssize_y = rsize_y / 100
+
+        material = bpy.data.materials.new(name=baseName)
+        material.use_nodes = True
+
+        outputNode = material.node_tree.nodes[0] #Presumed to be material output node
+
+        if(outputNode.type != "OUTPUT_MATERIAL"):
+            for node in material.node_tree.nodes:
+                if node.type == "OUTPUT_MATERIAL":
+                    outputNode = node
+                    break
+
+        mainNode = outputNode.inputs[0].links[0].from_node
+        imgNode = material.node_tree.nodes.new("ShaderNodeTexImage")
+        imgNode.location.x = -450
+        imgNode.location.y = 200
+        imgNode.image = loaded_file
+
+        material.node_tree.links.new(mainNode.inputs.get("Base Color"), imgNode.outputs.get("Color"))
+
+        bpy.ops.mesh.primitive_plane_add(size=1, align='WORLD', location=(0,0,PlanHeight), rotation=(0,0,PlanRotation), scale=(1,1,1))
+        #bpy.ops.mesh.primitive_plane_add(size=1, align='WORLD', location=(0,0,PlanHeight), rotation=(0,0,0), scale=(1,1,1))
+        imgPlane = bpy.data.objects["Plane"]
+        imgPlane.scale.x = ssize_x * paperScale
+        imgPlane.scale.y = ssize_y * paperScale
+        bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+
+        imgPlane.data.materials.append(material)
+
+        imgPlane.location.x = (bpy.data.scenes["Scene"].offsetPlanX / 1000)
+        imgPlane.location.y = (bpy.data.scenes["Scene"].offsetPlanY / 1000)
+
+        #print("Size: " + str(rsize_x))
+
+        return {'FINISHED'}
+
+class B2A_CreateCSVTemplate(bpy.types.Operator):
+    bl_idname = "b2a.create_csv"
+    bl_label = "Create CSV Template"
+    bl_description = "Create a CSV template file with all the materials listed"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+
+        scene = context.scene
+
+        #List all materials
+        materials = []
+
+        for mat in bpy.data.materials:
+
+            if mat.users > 0:
+
+                materials.append(mat.name)
+
+        csv_header = ['Material', 'Replacement']
+
+        csv_data = []
+
+        for m in materials:
+            csv_data.append({'Material':m, 'Replacement':'None'})
+
+        print(csv_data)
+
+        csv_path = os.path.join(getProjectFolder(), "replacement_schema.csv")
+
+        with open(csv_path, 'w', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=csv_header)
+            writer.writeheader()
+            writer.writerows(csv_data)
+
+        print(materials)
 
         return {'FINISHED'}
 
@@ -853,6 +1025,10 @@ class B2A_Configure(bpy.types.Operator):
     def execute(self, context):
 
         scene = context.scene
+
+        if scene.BIMProperties.ifc_file != "":
+            scene.b2a_props.ifc_loaded = True
+
 
         #Create BIM2ARM Collection
         BIM2ARM_Collection = bpy.data.collections.new("BIM2ARM")
@@ -1043,7 +1219,7 @@ class B2A_Configure(bpy.types.Operator):
             rp.rp_shadowmap_cascade = '2048'
 
             rp.rp_antialiasing = 'TAA'
-            rp.rp_supersampling = '2.0'
+            rp.rp_supersampling = '2'
             rp.rp_ssgi = 'SSAO'
             rp.arm_ssgi_max_steps = 16
             rp.rp_bloom = True
@@ -1060,6 +1236,8 @@ class B2A_Configure(bpy.types.Operator):
         else:
             scene.render.resolution_x = 1920
             scene.render.resolution_y = 1080
+
+        scene.b2a_props.ifc_configured = True
 
         return {'FINISHED'}
 
@@ -1122,6 +1300,18 @@ class SCENE_PT_B2A_panel (Panel):
             row.label(text="Material setup:")
             row = box.row(align=True)
             row.prop(scene, "material_setup")
+
+        if scene.material_setup == "Replacement":
+            row = box.row(align=True)
+            row.operator("b2a.create_csv")
+            row = box.row(align=True)
+            row.label(text="Replacement schema:")
+            row = box.row(align=True)
+            row.prop(scene, "replacement_schema")
+            row = box.row(align=True)
+            row.label(text="Replacement library:")
+            row = box.row(align=True)
+            row.prop(scene, "replacement_file")
 
         row = box.row(align=True)
         row.prop(scene, "mesh_grouping")
@@ -1199,16 +1389,43 @@ class SCENE_PT_B2A_panel (Panel):
             row.operator("b2a.lightmap")
 
         #Plan alignment tool
-        # if scene.ui_mode == "Advanced":
-        #     box = layout.box()
-        #     row = box.row(align=True)
-        #     row.label(text="Plan alignment tool", icon="FILE_CACHE")
+        if scene.ui_mode == "Advanced" and scene.b2a_props.storeys:
+            box = layout.box()
+            row = box.row(align=True)
+            row.label(text="Plan alignment tool", icon="FILE_CACHE")
+            row = box.row(align=True)
+            row.label(text="Select level:")
+            row = box.row(align=True)
+            row.prop(scene, "levels")
+            row = box.row(align=True)
+            row.label(text="Plan file:")
+            row = box.row(align=True)
+            row.prop(scene, "levelPlan")
+            row = box.row(align=True)
+            row.label(text="File DPI:")
+            row = box.row(align=True)
+            row.prop(scene, "levelPlanDPI")
+            row = box.row(align=True)
+            row.label(text="File Scale:")
+            row = box.row(align=True)
+            row.prop(scene, "levelScale")
+            row = box.row(align=True)
 
-        #     for idx, storey in enumerate(storeys):
-        #         row = box.row(align=True)
-        #         row.label(text=storey.name)
-        #         #row.prop(scene, "storeys")
-        #         row.prop(scene, "storeys['" + str(idx) + "']")
+            row.label(text="Offset Plan:")
+            row = box.row(align=True)
+            row.prop(scene, "offsetPlanX")
+            row = box.row(align=True)
+            row = box.row(align=True)
+            row.prop(scene, "offsetPlanY")
+            row = box.row(align=True)
+
+            row.operator("b2a.import_plan")
+
+            #for idx, storey in enumerate(scene.b2a_props.storeys):
+                #row = box.row(align=True)
+                #row.label(text=storey.name)
+                #row.prop(scene, "storeys")
+                #row.prop(scene, "storeys['" + str(idx) + "']")
 
                 #col.prop(context.active_object, '["' + MinkoScript.format_property_name(i, key) + '"]',text='')
 
@@ -1247,11 +1464,34 @@ class SCENE_PT_B2A_panel (Panel):
         row = box.row(align=True)
         row.operator("b2a.explore")
 
-classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC, B2A_Explore, B2A_MakeLocal, B2A_LightmapObjects]
+def get_levels(self, context):
+
+    items = []
+
+    for lvl in bpy.context.scene.b2a_props.storeys:
+
+        if lvl.name.startswith('IfcBuildingStorey'):
+
+            name = lvl.name
+
+            items.append((str(name), str(name),''))
+
+    items.pop(0) #Find a way to clean up characters w. unicode
+
+    return items
+
+classes = [SCENE_PT_B2A_panel, B2A_Prepare, B2A_Configure, B2A_Play, B2A_Deploy, B2A_LoadIFC, B2A_Explore, B2A_MakeLocal, B2A_LightmapObjects, B2A_CreateCSVTemplate, B2A_ImportPlan]
+
+class Level_Props(bpy.types.PropertyGroup):
+    levels: bpy.props.StringProperty()
+
+classes.append(Level_Props)
 
 def register():
     for cls in classes:
         register_class(cls)
+
+    bpy.types.Scene.b2a_props = B2A_Props
 
     bpy.types.Scene.ui_mode = EnumProperty(
         items = [('Easy', 'Easy', 'The UI is minimized to be as simple as possible'),
@@ -1270,17 +1510,26 @@ def register():
     bpy.types.Scene.remove_grids = bpy.props.BoolProperty(name="Remove grids", default=True, description="Remove all grids from the file")
     bpy.types.Scene.convert_materials = bpy.props.BoolProperty(name="Convert materials", default=True, description="Converts IFC materials")
     bpy.types.Scene.material_setup = EnumProperty(
-        items = [('Grey', 'Grey', 'Default to grey material'),
+        items = [('Grey', 'Conceptual', 'Default to grey material'),
                  ('Native', 'Native', 'Convert IFC colors to materials'),
                  ('Replacement', 'Replacement Schema', 'Use a replacement schema to assign materials')],
                 name = "", description="Method for assigning IFC materials", default='Grey')
     bpy.types.Scene.mesh_grouping = EnumProperty(
         items = [('None', 'None', ''),
                  ('Performance', 'Performance Grouping', 'Join the individual object meshes into one object for improved performance, but looses properties. Best just for visualizing information')],
-                name = "", description="Mesh grouping", default='None')
+                name = "", description="Mesh grouping", default='Performance')
     bpy.types.Scene.group_exclusion = bpy.props.PointerProperty(name="Group exclusion", description="List of IFC classes to exclude from the grouping, for instance 'IfcWindow, IfcDoor', etc", type=bpy.types.Text)
     bpy.types.Scene.expose_properties = bpy.props.BoolProperty(name="Expose IFC property sets", default=False, description="")
     bpy.types.Scene.expose_excluded_properties = bpy.props.BoolProperty(name="Expose IFC property sets for excluded", default=False, description="Expose IFC property sets for excluded")
+
+    #Operator: Convert/Place PDF
+    #Prop: DPI Settings
+
+    #Operator: Create empty CSV file
+    bpy.types.Scene.replacement_schema = StringProperty(name="", description="CSV schema describing which materials will be replaced", default="", subtype="FILE_PATH")
+    bpy.types.Scene.replacement_file = StringProperty(name="", description="A blend file containing the materials that will be appended and used for replacement", default="", subtype="FILE_PATH")
+
+    bpy.types.Scene.concept_setup = bpy.props.BoolProperty(name="Concept Setup", default=True, description="Setup for a conceptual model")
 
     bpy.types.Scene.setup_camera = bpy.props.BoolProperty(name="Setup camera", default=True, description="Setup camera")
     bpy.types.Scene.camera_fov = bpy.props.FloatProperty(name="Camera FOV", description="Set the camera field of view in degrees", default=90.0)
@@ -1317,7 +1566,44 @@ def register():
                  ('HTML5', 'HTML5', 'Create a web export file. You need a server to view the file')],
                 name = "", description="Select platform to deploy to", default='Executable')
 
-    bpy.types.Scene.storeys = []
+    bpy.types.Scene.levels = EnumProperty(items = get_levels, name="", description="")
+
+    bpy.types.Scene.levelPlan = bpy.props.StringProperty(name="", description="An image file or PDF of your plan", default="", subtype="FILE_PATH")
+
+    bpy.types.Scene.offsetPlanX = bpy.props.IntProperty(name="Offset X:", description="Offset the plan in the project x-direction", default=0)
+    bpy.types.Scene.offsetPlanY = bpy.props.IntProperty(name="Offset Y:", description="Offset the plan in the project y-direction", default=0)
+
+    bpy.types.Scene.levelScale = EnumProperty(
+        items = [('a', '1:5', ''),
+                 ('b', '1:10', ''),
+                 ('c', '1:20', ''),
+                 ('d', '1:50', ''),
+                 ('e', '1:100', ''),
+                 ('f', '1:200', '')],
+                name = "", description="Plan scale", default='d')
+    
+    bpy.types.Scene.levelPlanDPI = EnumProperty(
+        items = [('Low', 'Low', 'Low setting. Corresponds to 72 DPI in Revit'),
+                 ('Medium', 'Medium', 'Medium setting. Corresponds to 150 DPI in Revit'),
+                 ('High', 'High', 'High setting. Corresponds to 300 DPI in Revit'),
+                 ('Presentation', 'Presentation', 'Presentation setting. Corresponds to 600 DPI in Revit'),
+                 ('Custom', 'Custom', 'Set your own DPI')],
+                name = "", description="DPI of the selected plan", default='High')
+
+    # bpy.types.Scene.levelPlanDPI = EnumProperty(
+    #         items = [('Low', 'Low', 'Low setting. Corresponds to 72 DPI in Revit'),
+    #                 ('Medium', 'Medium', 'Medium setting. Corresponds to 150 DPI in Revit'),
+    #                 ('High', 'High', 'High setting. Corresponds to 300 DPI in Revit'),
+    #                 ('Presentation', 'Presentation setting. Corresponds to 600 DPI in Revit'),
+    #                 ('Custom', 'Custom', 'Set your own DPI')],
+    #                 name = "", description="DPI of the selected plan", default='High')
+
+    print("Registering namespaces...")
+    #bpy.app.driver_namespace['b2a_ifc_loaded'] = False
+    #bpy.app.driver_namespace['b2a_ifc_configured'] = False
+   #bpy.app.driver_namespace['b2a_ifc_prepared'] = False
+    #bpy.app.driver_namespace['b2a_storeys'] = []
+    #bpy.app.driver_namespace['b2a_deployed'] = False
     
 
 def unregister():
