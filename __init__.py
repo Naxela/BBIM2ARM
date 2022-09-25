@@ -15,7 +15,7 @@ bl_info = {
     "name" : "BIM2ARM",
     "author" : "Alexander Kleemann",    
     "description" : "BIM to Armory",
-    "blender" : (2, 93, 0),
+    "blender" : (3, 3, 0),
     "version" : (1, 0, 0),
     "location" : "View3D > Sidebar",
     "warning" : "",
@@ -235,24 +235,10 @@ def getAddonFolder():
 
     context = bpy.context
 
-    for mod_name in context.preferences.addons.keys():
-        if mod_name == "bim2arm":
-            mod = sys.modules[mod_name]
-            file = mod.__file__
-            path = os.path.dirname(os.path.realpath(file))
-            return path
+    script_file = os.path.realpath(__file__)
+    directory = os.path.dirname(script_file)
 
-        if mod_name == "BIM2ARM":
-            mod = sys.modules[mod_name]
-            file = mod.__file__
-            path = os.path.dirname(os.path.realpath(file))
-            return path
-
-        if mod_name == "BIM2ARM-main":
-            mod = sys.modules[mod_name]
-            file = mod.__file__
-            path = os.path.dirname(os.path.realpath(file))
-            return path
+    return directory
 
 def getProperty(obj):
     
@@ -507,6 +493,7 @@ class B2A_Prepare(bpy.types.Operator):
                         
                     bpy.data.collections.remove(collection)
 
+        #Make single-user
 
         #Deselect all
         print("Deselecting all")
@@ -589,6 +576,8 @@ class B2A_Prepare(bpy.types.Operator):
                         mat = slots.material
 
                         mat.use_nodes = True
+                        mat.arm_ignore_irradiance = True
+                        mat.arm_two_sided = True
                         
                         for node in mat.node_tree.nodes:
                             
@@ -608,6 +597,7 @@ class B2A_Prepare(bpy.types.Operator):
                                     mat.arm_blending = False
                                     mat.arm_cast_shadow = False
                                     mat.arm_ignore_irradiance = True
+                                    
 
                                     node.inputs.get("Alpha").default_value = node.inputs.get("Base Color").default_value[3]
 
@@ -669,7 +659,7 @@ class B2A_Prepare(bpy.types.Operator):
                     
             bpy.ops.object.join()
 
-            bpy.context.selected_objects[0].name = "PFGroup"
+            bpy.context.selected_objects[0].name = "B2AGroup"
 
             if scene.expose_excluded_properties:
 
@@ -694,6 +684,12 @@ class B2A_Prepare(bpy.types.Operator):
             #bpy.context.scene.camera.arm_frustrum_culling = False
 
         else:
+
+            for obj in bpy.data.objects:
+
+                bpy.context.view_layer.objects.active = obj
+
+                bpy.ops.object.make_single_user(type='ALL', object=True, obdata=True)
 
             if scene.expose_properties:
 
@@ -729,8 +725,8 @@ class B2A_Prepare(bpy.types.Operator):
 
                 #bpy.app.driver_namespace['b2a_storeys'].append(obj.name)
 
-        for index, storey in enumerate(scene.b2a_props.storeys):
-            print(str(index) + " : " + storey.name)
+        #for index, storey in enumerate(scene.b2a_props.storeys):
+            #print(str(index) + " : " + storey.name)
             #pass
             #bpy.types.Scene.storeys.append(bpy.props.StringProperty(name=storey.name, description="", default="", subtype="FILE_PATH"))
 
@@ -895,7 +891,7 @@ class B2A_CreateCSVTemplate(bpy.types.Operator):
 
                 materials.append(mat.name)
 
-        csv_header = ['Material', 'Replacement']
+        csv_header = ['Material', 'Replacement', 'Material Scale', 'UV Scale']
 
         csv_data = []
 
@@ -1239,6 +1235,13 @@ class B2A_Configure(bpy.types.Operator):
 
         scene.b2a_props.ifc_configured = True
 
+        #Clean unused slots
+        for obj in bpy.data.objects:
+            if obj.type == "MESH":
+                bpy.context.view_layer.objects.active = obj
+                print("Removing unused slots for: " + obj.name)
+                bpy.ops.object.material_slot_remove_unused()
+
         return {'FINISHED'}
 
 class SCENE_PT_B2A_panel (Panel):
@@ -1392,13 +1395,13 @@ class SCENE_PT_B2A_panel (Panel):
         if scene.ui_mode == "Advanced" and scene.b2a_props.storeys:
             box = layout.box()
             row = box.row(align=True)
-            row.label(text="Plan alignment tool", icon="FILE_CACHE")
+            row.label(text="Drawing alignment tool", icon="FILE_CACHE")
             row = box.row(align=True)
             row.label(text="Select level:")
             row = box.row(align=True)
             row.prop(scene, "levels")
             row = box.row(align=True)
-            row.label(text="Plan file:")
+            row.label(text="Drawing file:") #drawing_type
             row = box.row(align=True)
             row.prop(scene, "levelPlan")
             row = box.row(align=True)
@@ -1411,7 +1414,7 @@ class SCENE_PT_B2A_panel (Panel):
             row.prop(scene, "levelScale")
             row = box.row(align=True)
 
-            row.label(text="Offset Plan:")
+            row.label(text="Offset Drawing:")
             row = box.row(align=True)
             row.prop(scene, "offsetPlanX")
             row = box.row(align=True)
@@ -1464,6 +1467,10 @@ class SCENE_PT_B2A_panel (Panel):
         row = box.row(align=True)
         row.operator("b2a.explore")
 
+        box = layout.box()
+        row = box.row(align=True)
+        row.label(text="Utilities", icon="FILE_CACHE")
+
 def get_levels(self, context):
 
     items = []
@@ -1476,7 +1483,7 @@ def get_levels(self, context):
 
             items.append((str(name), str(name),''))
 
-    items.pop(0) #Find a way to clean up characters w. unicode
+    #items.pop(0) #Find a way to clean up characters w. unicode
 
     return items
 
@@ -1573,6 +1580,13 @@ def register():
     bpy.types.Scene.offsetPlanX = bpy.props.IntProperty(name="Offset X:", description="Offset the plan in the project x-direction", default=0)
     bpy.types.Scene.offsetPlanY = bpy.props.IntProperty(name="Offset Y:", description="Offset the plan in the project y-direction", default=0)
 
+    bpy.types.Scene.schema_tool = EnumProperty(
+        items = [('Window', 'Window', ''),
+                 ('Door', 'Door', ''),
+                 ('Walls', 'Walls', ''),
+                 ('Rooms', 'Rooms', '')],
+                name = "", description="Window tool", default='Window')
+    
     bpy.types.Scene.levelScale = EnumProperty(
         items = [('a', '1:5', ''),
                  ('b', '1:10', ''),
@@ -1581,6 +1595,11 @@ def register():
                  ('e', '1:100', ''),
                  ('f', '1:200', '')],
                 name = "", description="Plan scale", default='d')
+
+    bpy.types.Scene.drawing_type = EnumProperty(
+        items = [('Plan', 'Plan', ''),
+                 ('Section', 'Section', '')],
+                name = "", description="Drawing type - Plan: Horisontal or Section:Vertical", default='Plan')
     
     bpy.types.Scene.levelPlanDPI = EnumProperty(
         items = [('Low', 'Low', 'Low setting. Corresponds to 72 DPI in Revit'),
@@ -1634,4 +1653,5 @@ TODO:
 - Door / Window tool
 - Prepare: Grid
 - Spaces to Volumes
+- Group meshes by classes
 '''
