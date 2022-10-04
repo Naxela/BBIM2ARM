@@ -1,3 +1,4 @@
+
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 3 of the License, or
@@ -16,7 +17,7 @@ bl_info = {
     "author" : "Alexander Kleemann",    
     "description" : "BIM to Armory",
     "blender" : (3, 3, 0),
-    "version" : (1, 0, 0),
+    "version" : (0, 1, 2),
     "location" : "View3D > Sidebar",
     "warning" : "",
     "support": "COMMUNITY",
@@ -24,7 +25,7 @@ bl_info = {
     "doc_url": "",
 }
 
-import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil, platform, webbrowser
+import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil, platform, webbrowser, math
 import blenderbim.bim.module.root.prop as root_prop
 from bpy.types import Panel
 from blenderbim.bim.ifc import IfcStore
@@ -494,6 +495,8 @@ class B2A_Prepare(bpy.types.Operator):
                     bpy.data.collections.remove(collection)
 
         #Make single-user
+        bpy.data.worlds["Arm"].arm_batch_meshes = True
+        bpy.data.worlds["Arm"].arm_batch_materials = False
 
         #Deselect all
         print("Deselecting all")
@@ -550,6 +553,19 @@ class B2A_Prepare(bpy.types.Operator):
             
                 bpy.ops.object.delete()
 
+        if scene.add_b2a_lib:
+
+            b2a_asset_path = os.path.join(getAddonFolder(),"assets")
+
+            lib_found = False
+            for alib in bpy.context.preferences.filepaths.asset_libraries:
+                
+                if alib.name == "B2A_Library":
+                    lib_found = True
+                    
+            if not lib_found:
+                bpy.ops.preferences.asset_library_add(directory=b2a_asset_path)
+                bpy.context.preferences.filepaths.asset_libraries[-1].name = "B2A_Library"
 
         if scene.convert_materials:
 
@@ -570,6 +586,8 @@ class B2A_Prepare(bpy.types.Operator):
             if scene.material_setup == "Native":
 
                 for obj in bpy.data.objects:
+
+                    print("Replacing for object: " + obj.name)
                     
                     for slots in obj.material_slots:
                         
@@ -594,18 +612,79 @@ class B2A_Prepare(bpy.types.Operator):
                                 if node.inputs.get("Base Color").default_value[3] < 0.99:
                                     
                                     mat.blend_method = "BLEND"
+                                    mat.shadow_method = "CLIP"
                                     mat.arm_blending = False
                                     mat.arm_cast_shadow = False
                                     mat.arm_ignore_irradiance = True
-                                    
 
                                     node.inputs.get("Alpha").default_value = node.inputs.get("Base Color").default_value[3]
 
 
             if scene.material_setup == "Replacement":
-                
-                pass
 
+                if not bpy.data.scenes["Scene"].replacement_file:
+                    pass
+
+                #    print(x)
+
+                if not bpy.data.scenes["Scene"].replacement_schema:
+                    pass
+
+                #    print(y)
+                
+                materialFile = bpy.path.abspath(bpy.data.scenes["Scene"].replacement_file)
+
+                with bpy.data.libraries.load(materialFile) as (data_from, data_to):
+                    data_to.materials = data_from.materials
+
+                replacementList = bpy.path.abspath(bpy.data.scenes["Scene"].replacement_schema)
+
+                csv_dict = {}
+
+                with open(replacementList, mode='r') as inp:
+                    csv_reader = csv.reader(inp)
+                    for row in csv_reader:
+                        if row:
+                            if row[1] != 'None':
+                                omat = row[0]
+                                rmat = row[1]
+                                mscale = row[2]
+                                uvscale = row[3]
+
+                                csv_dict[omat] = [rmat, mscale, uvscale]
+
+                for obj in bpy.data.objects:
+
+                    for slot in obj.material_slots:
+
+                        slot_mat = slot.material.name
+
+                        if slot_mat != "":
+
+                            if slot_mat in csv_dict:
+
+                                slot.material = bpy.data.materials[csv_dict[slot_mat][0]]
+
+                                print("FOUND!")
+                                print(csv_dict[slot_mat])
+
+                                nodes = slot.material.node_tree.nodes
+
+                                for node in nodes:
+
+                                    if node.type == "MAPPING":
+
+                                        mscale = float(csv_dict[slot_mat][1])
+
+                                        node.inputs.get('Scale').default_value = (mscale,mscale,mscale) 
+                                        #csv_dict[slot_mat][1]
+                                        #node.inputs.get('Scale').default_value.y = csv_dict[slot_mat][1]
+                                        #node.inputs.get('Scale').default_value.z = csv_dict[slot_mat][1]
+
+                            else:
+
+                                print("UNKNOWN! Skip: " + slot_mat)
+            
 
         if scene.mesh_grouping == "Performance":
 
@@ -659,6 +738,13 @@ class B2A_Prepare(bpy.types.Operator):
                     
             bpy.ops.object.join()
 
+            bpy.ops.object.mode_set(mode='EDIT')
+            bpy.ops.mesh.select_all(action='SELECT')
+            angle = math.radians(45.0)
+            bpy.ops.uv.cube_project()
+            bpy.ops.mesh.select_all(action='DESELECT')
+            bpy.ops.object.mode_set(mode='OBJECT')
+
             bpy.context.selected_objects[0].name = "B2AGroup"
 
             if scene.expose_excluded_properties:
@@ -666,9 +752,6 @@ class B2A_Prepare(bpy.types.Operator):
                 for obj in excluded_objects:
 
                     exposeProperties(obj)
-
-                    #Add physics
-
             
             for obj in excluded_objects:
 
@@ -677,19 +760,45 @@ class B2A_Prepare(bpy.types.Operator):
                 bpy.context.view_layer.objects.active = obj
 
                 bpy.ops.rigidbody.object_add()
-
                 obj.rigid_body.type = "PASSIVE"
-            
-            #Turn off frustrum culling
-            #bpy.context.scene.camera.arm_frustrum_culling = False
+                obj.rigid_body.collision_shape = 'MESH'
+                obj.rigid_body.mesh_source = 'BASE'
 
         else:
 
+            print("No performance grouping")
+
+            if not bpy.context.scene.rigidbody_world:
+                bpy.ops.rigidbody.world_add()
+                
+            bpy.context.scene.rigidbody_world.enabled = True
+
             for obj in bpy.data.objects:
 
-                bpy.context.view_layer.objects.active = obj
+                if obj.type == "MESH":
 
-                bpy.ops.object.make_single_user(type='ALL', object=True, obdata=True)
+                    obj.select_set(True)
+                    bpy.context.view_layer.objects.active = obj
+
+            bpy.ops.rigidbody.objects_add(type='ACTIVE')
+
+            for obj in bpy.data.objects:
+
+                if obj.type == "MESH":
+            
+
+                    #print("Adding physics to: " + obj.name)
+
+                    #bpy.context.view_layer.objects.active = obj
+                    #bpy.ops.rigidbody.object_add()
+                    obj.rigid_body.type = "PASSIVE"
+                    obj.rigid_body.collision_shape = 'MESH'
+                    obj.rigid_body.mesh_source = 'BASE'
+
+                #TODO - Select joined
+
+                #bpy.context.view_layer.objects.active = obj
+                #bpy.ops.object.make_single_user(type='ALL', object=True, obdata=True)
 
             if scene.expose_properties:
 
@@ -701,20 +810,16 @@ class B2A_Prepare(bpy.types.Operator):
 
                         exposeProperties(obj)
 
-                        bpy.context.view_layer.objects.active = obj
-
-                        bpy.ops.rigidbody.object_add()
-
-                        obj.rigid_body.type = "PASSIVE"
-
         #Get storeys into array
         for obj in scene.objects:
 
+            print("Getting IFC File")
             IfcStore.get_file()
 
             if not IfcClassData.is_loaded:
                 IfcClassData.load()
 
+            print("Getting Entity for: " + obj.name)
             element = tool.Ifc.get_entity(obj) #Product
 
             if element.is_a() == "IfcBuildingStorey":
@@ -896,7 +1001,7 @@ class B2A_CreateCSVTemplate(bpy.types.Operator):
         csv_data = []
 
         for m in materials:
-            csv_data.append({'Material':m, 'Replacement':'None'})
+            csv_data.append({'Material':m, 'Replacement':'None', 'Material Scale':1, 'UV Scale':1})
 
         print(csv_data)
 
@@ -1077,28 +1182,44 @@ class B2A_Configure(bpy.types.Operator):
             #Copy FlyNavigation trait
             #flyNavFile = getAddonFolder() + "/scripts/FlyNavigation.hx"
 
-
-
             #armSourcesFolder = getProjectFolder() + "/Sources/arm/"
 
-            armSourcesFolder = getProjectFolder() + "/Sources/arm/FlyNavigation.hx"
+            armSourcesFolder = getProjectFolder() + "/Sources/arm"
+            armCanvasFolder = getProjectFolder() + "/Bundled/canvas"
 
             flvScript = getScript(0,[str(scene.camera_speed), str(scene.camera_easing)])
-            print(flvScript)
+            #print(flvScript)
 
             #Make folder is it doesn't exist
-            os.makedirs(os.path.dirname(armSourcesFolder), exist_ok=True)
+            os.makedirs(armSourcesFolder, exist_ok=True)
+            os.makedirs(armCanvasFolder, exist_ok=True)
 
-            with open(armSourcesFolder,"w") as f:
+            #os.path.join(getAddonFolder,"assets/canvas")
+            #if not os.path.isdir(os.path.join(getAddonFolder(),"assets","canvas")): getProjectFolder() + "/Bundled/canvas"
+            shutil.copytree(os.path.join(getAddonFolder(),"assets","canvas"), os.path.join(getProjectFolder(),'Bundled','canvas'), dirs_exist_ok=True)
+
+            shutil.copy(os.path.join(getAddonFolder(),"scripts","BIMInspector.hx"), os.path.join(armSourcesFolder,"BIMInspector.hx"))
+
+            with open(armSourcesFolder + "/FlyNavigation.hx","w") as f:
                 f.write(flvScript)
 
             #shutil.copy(flyNavFile, armSourcesFolder)
 
-            mainCam.arm_traitlist[0].type_prop = "Haxe Script"
-            mainCam.arm_traitlist[0].class_name_prop = "FlyNavigation"
+            mainCam.arm_traitlist[-1].type_prop = "Haxe Script"
+            mainCam.arm_traitlist[-1].class_name_prop = "FlyNavigation"
 
             mainCam.select_set(True)
             bpy.context.view_layer.objects.active = mainCam
+
+            #BIMInspector
+            mainCam.arm_traitlist.add()
+            mainCam.arm_traitlist[-1].type_prop = "Haxe Script"
+            mainCam.arm_traitlist[-1].class_name_prop = "BIMInspector"
+
+            #Setup UI
+            mainCam.arm_traitlist.add()
+            mainCam.arm_traitlist[-1].type_prop = "UI Canvas"
+            mainCam.arm_traitlist[-1].canvas_name_prop = "HD-Canvas"
 
             bpy.ops.arm.refresh_scripts()
             context.area.tag_redraw()
@@ -1106,7 +1227,7 @@ class B2A_Configure(bpy.types.Operator):
             #mainCam.arm_traitlist[0].arm_traitpropslist[0].value_float = 5.0 #Speed
             #mainCam.arm_traitlist[0].arm_traitpropslist[0].value_float = 1.0 #Ease
 
-            mainCam.data.lens = 18.0
+            mainCam.data.lens = 25.0
             bpy.context.scene.camera = mainCam
 
             if scene.align_camera:
@@ -1152,6 +1273,12 @@ class B2A_Configure(bpy.types.Operator):
                     envFile = getAddonFolder() + "/environments/Sunny.hdr"
                 if scene.world_type == "Cloudy":
                     envFile = getAddonFolder() + "/environments/Cloudy.hdr"
+                if scene.world_type == "Snowy":
+                    envFile = getAddonFolder() + "/environments/Snowy.hdr"
+                if scene.world_type == "Snowy2":
+                    envFile = getAddonFolder() + "/environments/Snowy2.hdr"
+                if scene.world_type == "UrbanEvening":
+                    envFile = getAddonFolder() + "/environments/UrbanEvening.hdr"
 
                 skytexImage = bpy.data.images.load(envFile)
 
@@ -1235,6 +1362,17 @@ class B2A_Configure(bpy.types.Operator):
 
         scene.b2a_props.ifc_configured = True
 
+        bpy.data.worlds["Arm"].arm_physics = 'Enabled'
+        #Find a way to create LOD for physics
+        #Collision mesh (Invisible) => Parent => Real mesh (Visible)
+
+        #Mat Selector
+        bpy.data.materials.new(name="B2A_SelectorMat")
+        bpy.data.materials["B2A_SelectorMat"].use_nodes = True
+        bpy.data.materials["B2A_SelectorMat"].use_fake_user = True
+        bpy.data.materials["B2A_SelectorMat"].node_tree.nodes['Principled BSDF']
+        bpy.data.materials["B2A_SelectorMat"].node_tree.nodes['Principled BSDF'].inputs.get("Base Color").default_value = (0,2,0,0)
+
         #Clean unused slots
         for obj in bpy.data.objects:
             if obj.type == "MESH":
@@ -1294,6 +1432,8 @@ class SCENE_PT_B2A_panel (Panel):
         row.prop(scene, "remove_grids")
         row = box.row(align=True)
         row.prop(scene, "remove_spaces")
+        row = box.row(align=True)
+        row.prop(scene, "add_b2a_lib")
         
         row = box.row(align=True)
         row.prop(scene, "convert_materials")
@@ -1508,6 +1648,9 @@ def register():
     bpy.types.Scene.remove_aux_collections = bpy.props.BoolProperty(name="Remove Auxillary Collections", default=True, description="Remove the extra collections that are linked internally. Might break if not toggled or prepared manually")
     bpy.types.Scene.remove_annotations = bpy.props.BoolProperty(name="Remove annotations", default=True, description="Remove all 2D annotations from the file")
     bpy.types.Scene.remove_spaces = bpy.props.BoolProperty(name="Remove spaces", default=True, description="Remove all spaces from the file")
+    bpy.types.Scene.add_physics = bpy.props.BoolProperty(name="Enable physics", default=False, description="Heavy, but required to select objects from 3D view")
+    
+    bpy.types.Scene.add_b2a_lib = bpy.props.BoolProperty(name="Add B2A Library", default=True, description="Add the BIM2ARM asset library")
     
     bpy.types.Scene.space_setup = EnumProperty(
         items = [('None', 'None', 'None'),
@@ -1524,7 +1667,7 @@ def register():
     bpy.types.Scene.mesh_grouping = EnumProperty(
         items = [('None', 'None', ''),
                  ('Performance', 'Performance Grouping', 'Join the individual object meshes into one object for improved performance, but looses properties. Best just for visualizing information')],
-                name = "", description="Mesh grouping", default='Performance')
+                name = "", description="Mesh grouping", default='None')
     bpy.types.Scene.group_exclusion = bpy.props.PointerProperty(name="Group exclusion", description="List of IFC classes to exclude from the grouping, for instance 'IfcWindow, IfcDoor', etc", type=bpy.types.Text)
     bpy.types.Scene.expose_properties = bpy.props.BoolProperty(name="Expose IFC property sets", default=False, description="")
     bpy.types.Scene.expose_excluded_properties = bpy.props.BoolProperty(name="Expose IFC property sets for excluded", default=False, description="Expose IFC property sets for excluded")

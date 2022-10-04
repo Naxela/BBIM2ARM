@@ -3,6 +3,10 @@ package arm;
 import zui.*;
 import iron.object.Object;
 import iron.math.Vec4;
+import iron.object.MeshObject;
+import iron.data.MaterialData;
+import armory.trait.physics.RigidBody;
+import armory.trait.physics.bullet.RigidBody.Shape;
 
 @:access(zui.Zui)
 @:access(armory.logicnode.LogicNode)
@@ -10,7 +14,7 @@ import iron.math.Vec4;
 class BIMInspector extends iron.Trait {
 
     var ui:Zui; //The UI Class instance
-    var focusedObj: Object; //The object which is currently selected in the list
+    var focusedObj: Object = null; //The object which is currently selected in the list
 	var selectedObject: iron.object.Object;
 
 	var content:haxe.DynamicAccess<Dynamic>; //Holder for dynamic property information
@@ -18,11 +22,18 @@ class BIMInspector extends iron.Trait {
 	var mouse = iron.system.Input.getMouse(); //Get the mouse input
 
 	var physics = armory.trait.physics.PhysicsWorld.active; //Get the rigid body physics controller
+	var hideLoc:Map<String, iron.math.Vec4> = new Map();
+
+
+	var archIfcClasses = [''];
+	var mepIfcClasses = [''];
+	var structuralIfcClasses = [''];
 
 	var inspectorWindow = Id.handle();
 	var windowTab = Id.handle();
 	var modelTreePanel = Id.handle();
 	var propertiesPanel = Id.handle();
+	var prevMaterials = [];
 
 	var hwin = Id.handle();
 	var htab = Id.handle();
@@ -34,7 +45,8 @@ class BIMInspector extends iron.Trait {
 		super();
 
         // Load font for UI labels - We need a font that supports unicode
-        iron.data.Data.getFont("arial.ttf", function(f:kha.Font) {
+		//arial.ttf
+        iron.data.Data.getFont("font_default.ttf", function(f:kha.Font) {
             ui = new Zui({font: f});
             iron.Scene.active.notifyOnInit(sceneInit);
         });
@@ -55,10 +67,10 @@ class BIMInspector extends iron.Trait {
 		ui.begin(g); //Begin drawing the zui class with the g-module
 
 		//Make window
-		if (ui.window(inspectorWindow, 0, 0, 400, iron.App.h(), false)) { //Handle, x-pos, y-pos, width, height, dragable
+		if (ui.window(inspectorWindow, 10, 20, 400, iron.App.h() - 45, false)) { //Handle, x-pos, y-pos, width, height, dragable
 		
 			//Make the model tree tab
-			if (ui.tab(windowTab, "BIM2ARM")) { //Handle, name
+			if (ui.tab(windowTab, "Model Hierarchy")) { //Handle, name
 			
 				//Make a model tree panel
 				if (ui.panel(modelTreePanel, "Model Tree")) {
@@ -107,6 +119,12 @@ class BIMInspector extends iron.Trait {
 							//ui.text(currentObject.name);
 
 							//ui.text(listObject.name);
+							var postfix = ' []';
+							if(!listObject.visible){
+								var postfix = " [H]";
+							} else {
+								var postfix = " [Hx]";
+							}
 
 							if(StringTools.contains(listObject.name, "/")){
 								var ifcClass = (listObject.name).split("/")[0];
@@ -172,7 +190,21 @@ class BIMInspector extends iron.Trait {
 
 						if (Std.is(key, String)) {
 
-							ui.text(index + ": " + key);
+							if(StringTools.contains(key, "/")){
+								var ifcClass = (key).split("/")[0];
+								var ifcName = (key).split("/")[1];
+
+								ui.text("IFC Class: " + ifcClass);
+								ui.text("Name: " + ifcName);
+	
+								if(ifcName == ""){
+									//ui.text(ifcClass);
+								} else {
+									//ui.text(ifcName);
+								}
+							}
+
+							//ui.text(index + ": " + key);
 
 						} else {
 
@@ -219,6 +251,52 @@ class BIMInspector extends iron.Trait {
 				}
 			
 			}
+
+			if (ui.tab(windowTab, "Discipline View")) {
+
+				if (ui.panel(modelTreePanel, "View Toggle")) {
+
+					var archview = ui.check(Id.handle({selected:true}), "Architecture");
+					var mepview = ui.check(Id.handle({selected:true}), "MEP");
+					var structureview = ui.check(Id.handle({selected:true}), "Structure");
+
+				}
+
+			}
+
+			if (ui.tab(windowTab, "Options")) {
+
+				if (ui.panel(modelTreePanel, "Shortcuts")) {
+
+					ui.text('Foward: W');
+					ui.text('Backward: S');
+					ui.text('Left: A');
+					ui.text('Right: D');
+					ui.text('Elevation Up: E');
+					ui.text('Elevation Down: Q');
+					ui.text('Sprint: Shift');
+					ui.text('Adjust Speed: Middle Mouse');
+
+					ui.text('Hide Toggle: H');
+					ui.text('Unhide All: Alt + H');
+
+					ui.text('Translate Tool: 1');
+					ui.text('Rotate Tool: 2');
+					ui.text('Scale Tool: 3');
+
+					ui.text('Markup: 4');
+					ui.text('Dimension: 5');
+					ui.text('Sectioning: 6');
+
+					ui.text('Perspective/Orthogonal: 7');
+					ui.text('Front-View: 8');
+					ui.text('Left-View: 9');
+					ui.text('Top-View: 0');
+
+				}
+
+			}
+
 		
 		}
 
@@ -247,12 +325,200 @@ class BIMInspector extends iron.Trait {
 	//3D Scene access at runtime
 	function update(){
 
+		var physics = armory.trait.physics.PhysicsWorld.active;
+		var mouse = iron.system.Input.getMouse();
+		var keyboard = iron.system.Input.getKeyboard();
+		var clickEvent = false;
+
+		if(mouse.released('left')){
+			//trace(mouse.x);
+			//trace(mouse.y);
+
+			var rb = physics.pickClosest(mouse.x, mouse.y, 1);
+
+			if(rb != null){
+				var rbobject = cast(rb.object, iron.object.Object);
+				//trace(rbobject.name);
+				selectObject(rbobject);
+				//rbobject.visible = false;
+			} else {
+				if(focusedObj != null){
+					if (Std.isOfType(focusedObj, iron.object.MeshObject)) {
+						var exmesh = cast(focusedObj, iron.object.MeshObject);
+						var exmatLen = exmesh.materials.length;
+		
+						for(i in 0...exmatLen){
+							exmesh.materials[i] = prevMaterials[i];
+						}
+		
+					}
+				}
+				focusedObj = null;
+			}
+			//trace(rb.object.name);
+		}
+
+		if(keyboard.down('alt')){
+
+
+			if(keyboard.started('h')){
+				for (c in iron.Scene.active.root.children) {
+
+					if (c.children.length > 0) {
+	
+						for(b in c.children){
+
+							//trace(b.name);
+							b.visible = true;
+
+							if(hideLoc[b.name] != null){
+								b.transform.loc.setFrom(hideLoc[b.name]);
+								b.transform.buildMatrix();
+								var rigidBody = b.getTrait(RigidBody);
+								if (rigidBody != null) rigidBody.syncTransform();
+								hideLoc[b.name] = null;
+								focusedObj.visible = true;
+							}
+
+							//var shape:Shape = Mesh;
+							//var rb = new RigidBody(shape, 1.0, 0.5, 0.0, 1, 1);
+							//rb.staticObj = false;
+							//focusedObj.addTrait(rb);
+						}
+
+					}
+				}
+			}
+
+			// if(keyboard.started('h')){
+
+			// 	for (c in iron.Scene.active.root.children) {
+			// 		c.visible = true;
+			// 	}
+
+			// }
+		} else {
+			if(keyboard.started('h')){
+
+				if(focusedObj != null){
+					if(hideLoc[focusedObj.name] == null){
+						hideLoc[focusedObj.name] = focusedObj.transform.world.getLoc();
+						var Distvec:Vec4 = new iron.math.Vec4(9999,9999,9999,9999);
+						focusedObj.transform.loc.setFrom(Distvec);
+						focusedObj.transform.buildMatrix();
+						var rigidBody = focusedObj.getTrait(RigidBody);
+						if (rigidBody != null) rigidBody.syncTransform();
+						focusedObj.visible = false;
+					} else {
+						//hideLoc[focusedObj.name] = focusedObj.transform.world.getLoc();
+						//var Distvec:Vec4 = new iron.math.Vec4(9999,9999,9999,9999);
+						focusedObj.transform.loc.setFrom(hideLoc[focusedObj.name]);
+						focusedObj.transform.buildMatrix();
+						var rigidBody = focusedObj.getTrait(RigidBody);
+						if (rigidBody != null) rigidBody.syncTransform();
+						hideLoc[focusedObj.name] = null;
+						focusedObj.visible = true;
+					}
+				}
+
+				//if(focusedObj != null){
+					//if(focusedObj.visible){
+
+						//focusedObj.visible = false;
+
+						//var rb = focusedObj.getTrait(RigidBody);
+						// if(rbmap[focusedObj.name] == null){
+						// 	rbmap[focusedObj.name] = rb;
+						// }
+						
+						//rb.remove();
+						//if(rb != null){
+						//	focusedObj.removeTrait(rb);
+						//}
+						
+					//} else {
+						//focusedObj.visible = true;
+
+						//if(rbmap[focusedObj.name] != null){
+						//trace(rbmap[focusedObj.name]);
+						//focusedObj.addTrait(rbmap[focusedObj.name]);
+						//var shape:Shape = Mesh;
+						//var rb = new RigidBody(shape, 1.0, 0.5, 0.0, 1, 1);
+						//rb.staticObj = true;
+						//focusedObj.addTrait(rb);
+					//}
+				//}
+
+			}
+		}
+
+
+
+		//Press hide => Hide/Unhide selected
+		//if()
+
+
 	}
 
 	//Select the object from the list ?? OR Scene RB?
 	function selectObject(obj: iron.object.Object) {
 
+		//If focused object is set, reset materials:
+		if(focusedObj != null){
+			if (Std.isOfType(focusedObj, iron.object.MeshObject)) {
+				var exmesh = cast(focusedObj, iron.object.MeshObject);
+				var exmatLen = exmesh.materials.length;
+
+				for(i in 0...exmatLen){
+					exmesh.materials[i] = prevMaterials[i];
+				}
+
+			}
+		}
+
 		focusedObj = obj;
+
+		//1. If existing focused obj, set material back
+
+		//2. Store all material slots
+
+		//3. Set all material slots to green
+		//if (object.materials.length != 0) {
+		//	for (slot in object.materials.length){
+		//		trace(object.materials[slot].name);
+		//	}
+		//}
+		if (Std.isOfType(obj, iron.object.MeshObject)) {
+			var mesh = cast(obj, iron.object.MeshObject);
+			var matLen = mesh.materials.length;
+			var selectorMat = null;
+			iron.data.Data.getMaterial(iron.Scene.active.raw.name, 'B2A_SelectorMat', function(mat: MaterialData) {
+				selectorMat = mat;
+			});
+
+			//trace(mesh.materials.length);
+
+			for(i in 0...matLen){
+				//trace(mesh.materials[i].name);
+				prevMaterials[i] = mesh.materials[i];
+				mesh.materials[i] = selectorMat;
+			}
+
+			//if (mesh != null){
+			//	if (mesh.materials.length != 0) {
+			//		for (slot in mesh.materials.length){
+			//			trace(mesh.materials[slot].name);
+			//		}
+			//	}
+			//}
+
+			//var slot = 0;
+			
+			//if (mesh != null) trace("NO MESH!");
+			
+			//trace(mesh.materials[slot].name);
+		}
+		//trace(obj.materials);
 		
 		trace("Reading properties for: " + obj.name);
 
@@ -272,14 +538,14 @@ class BIMInspector extends iron.Trait {
 
 			} else {
 
-				var empty_data = '{"Name":"' + obj.name + '", "Data":"Unavailable"}';
+				var empty_data = '{"Name":"' + obj.name + '", "Data":"Unavailable 1"}';
 				content = haxe.Json.parse(empty_data);
 
 			}
 
 		} else {
 
-			var empty_data = '{"Name":"' + obj.name + '", "Data":"Unavailable"}';
+			var empty_data = '{"Name":"' + obj.name + '", "Data":"Unavailable 2"}';
 			content = haxe.Json.parse(empty_data);
 
 		}
