@@ -17,7 +17,7 @@ bl_info = {
     "author" : "Alexander Kleemann",    
     "description" : "BIM to Armory",
     "blender" : (3, 3, 0),
-    "version" : (0, 1, 2),
+    "version" : (0, 1, 3),
     "location" : "View3D > Sidebar",
     "warning" : "",
     "support": "COMMUNITY",
@@ -498,6 +498,13 @@ class B2A_Prepare(bpy.types.Operator):
         bpy.data.worlds["Arm"].arm_batch_meshes = True
         bpy.data.worlds["Arm"].arm_batch_materials = False
 
+        for obj in bpy.context.scene.objects:
+
+            if obj.type == "MESH":
+            
+                obj.select_set(True)
+                bpy.ops.object.make_single_user(object=True, obdata=True, material=False, animation=False, obdata_animation=False)
+
         #Deselect all
         print("Deselecting all")
         bpy.ops.object.select_all(action='DESELECT')
@@ -571,6 +578,8 @@ class B2A_Prepare(bpy.types.Operator):
 
             print("Converting materials")
 
+            bpy.data.materials.new(name="B2AGrey")
+
             if scene.material_setup == "Grey":
 
                 matName = "Grey"
@@ -587,37 +596,46 @@ class B2A_Prepare(bpy.types.Operator):
 
                 for obj in bpy.data.objects:
 
-                    print("Replacing for object: " + obj.name)
-                    
-                    for slots in obj.material_slots:
-                        
-                        mat = slots.material
+                    if obj.type == "MESH":
 
-                        mat.use_nodes = True
-                        mat.arm_ignore_irradiance = True
-                        mat.arm_two_sided = True
-                        
-                        for node in mat.node_tree.nodes:
-                            
-                            if node.type == "BSDF_PRINCIPLED":
-                                
-                                #node.inputs.get("Base Color")
-                                
-                                node.inputs.get("Base Color").default_value = mat.diffuse_color
-                                
-                                node.inputs.get("Specular").default_value = 0.0
-                                
-                                node.inputs.get("Roughness").default_value = mat.roughness
+                        print("Replacing for object: " + obj.name)
 
-                                if node.inputs.get("Base Color").default_value[3] < 0.99:
+                        if len(obj.material_slots) < 1:
+
+                            print("Object has no material")
+                            obj.data.materials.append(bpy.data.materials["B2AGrey"])
+
+                        else:
+                        
+                            for slots in obj.material_slots:
+
+                                mat = slots.material
+
+                                mat.use_nodes = True
+                                mat.arm_ignore_irradiance = True
+                                mat.arm_two_sided = False
+                                
+                                for node in mat.node_tree.nodes:
                                     
-                                    mat.blend_method = "BLEND"
-                                    mat.shadow_method = "CLIP"
-                                    mat.arm_blending = False
-                                    mat.arm_cast_shadow = False
-                                    mat.arm_ignore_irradiance = True
+                                    if node.type == "BSDF_PRINCIPLED":
+                                        
+                                        #node.inputs.get("Base Color")
+                                        
+                                        node.inputs.get("Base Color").default_value = mat.diffuse_color
+                                        
+                                        node.inputs.get("Specular").default_value = 0.0
+                                        
+                                        node.inputs.get("Roughness").default_value = mat.roughness
 
-                                    node.inputs.get("Alpha").default_value = node.inputs.get("Base Color").default_value[3]
+                                        if node.inputs.get("Base Color").default_value[3] < 0.99:
+                                            
+                                            mat.blend_method = "BLEND"
+                                            mat.shadow_method = "CLIP"
+                                            mat.arm_blending = False
+                                            mat.arm_cast_shadow = False
+                                            mat.arm_ignore_irradiance = True
+
+                                            node.inputs.get("Alpha").default_value = node.inputs.get("Base Color").default_value[3]
 
 
             if scene.material_setup == "Replacement":
