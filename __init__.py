@@ -475,6 +475,22 @@ class B2A_Prepare(bpy.types.Operator):
 
         print("Prepare IFC Started")
 
+        #Name original scene
+        bpy.context.scene.name = "BIM_MainScene"
+
+        #Set no armory export
+        bpy.data.scenes["BIM_MainScene"].arm_export = False
+
+        #Create a new scene
+        bpy.data.scenes.new(name='BIM2ARM')
+
+        #Set active scene
+        bpy.context.window.scene = bpy.data.scenes["BIM2ARM"]
+
+        for obj in bpy.data.scenes["BIM_MainScene"].objects:
+            
+            bpy.data.scenes["BIM2ARM"].collection.objects.link(obj)
+
         if scene.BIMProperties.ifc_file != "":
             scene.b2a_props.ifc_loaded = True
 
@@ -586,7 +602,7 @@ class B2A_Prepare(bpy.types.Operator):
                 
                 bpy.data.materials.new(name=matName)
 
-                for obj in bpy.data.objects:
+                for obj in bpy.context.scene.objects:
 
                     for slot in obj.material_slots:
 
@@ -594,7 +610,7 @@ class B2A_Prepare(bpy.types.Operator):
 
             if scene.material_setup == "Native":
 
-                for obj in bpy.data.objects:
+                for obj in bpy.context.scene.objects:
 
                     if obj.type == "MESH":
 
@@ -671,7 +687,7 @@ class B2A_Prepare(bpy.types.Operator):
 
                                 csv_dict[omat] = [rmat, mscale, uvscale]
 
-                for obj in bpy.data.objects:
+                for obj in bpy.context.scene.objects:
 
                     for slot in obj.material_slots:
 
@@ -791,7 +807,7 @@ class B2A_Prepare(bpy.types.Operator):
                 
             bpy.context.scene.rigidbody_world.enabled = True
 
-            for obj in bpy.data.objects:
+            for obj in bpy.context.scene.objects:
 
                 if obj.type == "MESH":
 
@@ -800,7 +816,7 @@ class B2A_Prepare(bpy.types.Operator):
 
             bpy.ops.rigidbody.objects_add(type='ACTIVE')
 
-            for obj in bpy.data.objects:
+            for obj in bpy.context.scene.objects:
 
                 if obj.type == "MESH":
             
@@ -822,7 +838,7 @@ class B2A_Prepare(bpy.types.Operator):
 
                 print("Exposing properties")
 
-                for obj in bpy.data.objects:
+                for obj in bpy.context.scene.objects:
                     
                     if obj.type == "MESH":
 
@@ -896,7 +912,7 @@ class B2A_ImportPlan(bpy.types.Operator):
 
         selectedPlan = bpy.data.scenes["Scene"].levels
 
-        selectedPlanStorey = bpy.data.objects[selectedPlan]
+        selectedPlanStorey = bpy.context.scene.objects[selectedPlan]
 
         PlanHeight = selectedPlanStorey.location.z
         PlanRotation = selectedPlanStorey.rotation_euler.z
@@ -981,7 +997,7 @@ class B2A_ImportPlan(bpy.types.Operator):
 
         bpy.ops.mesh.primitive_plane_add(size=1, align='WORLD', location=(0,0,PlanHeight), rotation=(0,0,PlanRotation), scale=(1,1,1))
         #bpy.ops.mesh.primitive_plane_add(size=1, align='WORLD', location=(0,0,PlanHeight), rotation=(0,0,0), scale=(1,1,1))
-        imgPlane = bpy.data.objects["Plane"]
+        imgPlane = bpy.context.scene.objects["Plane"]
         imgPlane.scale.x = ssize_x * paperScale
         imgPlane.scale.y = ssize_y * paperScale
         bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
@@ -1258,17 +1274,22 @@ class B2A_Configure(bpy.types.Operator):
             bpy.ops.object.light_add(type='SUN', radius=1, align='WORLD', location=(0, 0, 0), scale=(1, 1, 1))
 
             if scene.world_type == "Dynamic":
-                bpy.data.objects["Sun"].rotation_euler = (0.69, 0, -0.52)
+                bpy.context.scene.objects["Sun"].rotation_euler = (0.69, 0, -0.52)
             if scene.world_type == "Sunrise":
-                bpy.data.objects["Sun"].rotation_euler = (1.57, -0.02, 0.96)
+                bpy.context.scene.objects["Sun"].rotation_euler = (1.57, -0.02, 0.96)
             if scene.world_type == "Sunny":
-                bpy.data.objects["Sun"].rotation_euler = (0.825, 0.0092, 0.96)
+                bpy.context.scene.objects["Sun"].rotation_euler = (0.825, 0.0092, 0.96)
             if scene.world_type == "Cloudy":
-                bpy.data.objects["Sun"].rotation_euler = (0.53, -0.21, 0.855)
+                bpy.context.scene.objects["Sun"].rotation_euler = (0.53, -0.21, 0.855)
 
             bpy.data.lights["Sun"].energy = scene.sun_strength
 
         #Setup world
+        if scene.world is None:
+
+            new_world = bpy.data.worlds.new("BIM2ARM-Environment")
+            scene.world = new_world
+
         if scene.setup_world:
             bpy.context.scene.world.use_nodes = True
 
@@ -1392,7 +1413,7 @@ class B2A_Configure(bpy.types.Operator):
         bpy.data.materials["B2A_SelectorMat"].node_tree.nodes['Principled BSDF'].inputs.get("Base Color").default_value = (0,2,0,0)
 
         #Clean unused slots
-        for obj in bpy.data.objects:
+        for obj in bpy.context.scene.objects:
             if obj.type == "MESH":
                 bpy.context.view_layer.objects.active = obj
                 print("Removing unused slots for: " + obj.name)
