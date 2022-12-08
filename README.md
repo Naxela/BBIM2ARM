@@ -1,3 +1,3 @@
-# BIM2ARM
+# BBIM2ARM
 
 Introduction and documentation coming soon
