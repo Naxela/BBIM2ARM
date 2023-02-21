@@ -322,7 +322,7 @@ def exposeProperties(obj):
     
     #If...blenderbim?
     
-    print(obj.name)
+    print("Exposing properties: " + obj.name)
     #print(bpy.context.active_object.BIMObjectProperties.ifc_definition_id)
     
     propsets = {}
@@ -508,18 +508,24 @@ class B2A_Prepare(bpy.types.Operator):
                         
                         bpy.data.objects.remove(obj, do_unlink=True)
                         
+                    print("Removing collection: " + collection.name)
                     bpy.data.collections.remove(collection)
 
         #Make single-user
         bpy.data.worlds["Arm"].arm_batch_meshes = True
         bpy.data.worlds["Arm"].arm_batch_materials = False
 
+        print("Making objects to single user: Selecting")
+
         for obj in bpy.context.scene.objects:
 
             if obj.type == "MESH":
             
                 obj.select_set(True)
-                bpy.ops.object.make_single_user(object=True, obdata=True, material=False, animation=False, obdata_animation=False)
+
+        print("Making objects to single user: Apply Single User")
+        
+        bpy.ops.object.make_single_user(object=True, obdata=True, material=False, animation=False, obdata_animation=False)
 
         #Deselect all
         print("Deselecting all")
@@ -547,7 +553,7 @@ class B2A_Prepare(bpy.types.Operator):
 
             for obj in bpy.context.scene.objects:
                 
-                print(obj.name)
+                print("Grid removed: " + obj.name)
                 
                 if "IfcGrid" in obj.name:
                     
@@ -564,7 +570,7 @@ class B2A_Prepare(bpy.types.Operator):
 
             for obj in bpy.context.scene.objects:
                 
-                print(obj.name)
+                print("Space removed: " + obj.name)
                 
                 if "IfcSpace" in obj.name:
                     
@@ -758,7 +764,7 @@ class B2A_Prepare(bpy.types.Operator):
                 if obj.type == "MESH":
 
                     ifcClass = getObjElement(obj).is_a()
-                    print(ifcClass)
+                    print("Obj is a: " + ifcClass)
 
                     if ifcClass not in exclusion_classes:
 
@@ -769,9 +775,14 @@ class B2A_Prepare(bpy.types.Operator):
                         excluded_objects.append(obj)
 
             bpy.context.view_layer.objects.active = bpy.context.selected_objects[0]
-                    
+            
+            print("Joining objects for performance")
+
             bpy.ops.object.join()
 
+            print("Joining complete")
+
+            print("Cube projecting")
             bpy.ops.object.mode_set(mode='EDIT')
             bpy.ops.mesh.select_all(action='SELECT')
             angle = math.radians(45.0)
@@ -858,7 +869,7 @@ class B2A_Prepare(bpy.types.Operator):
 
             if element.is_a() == "IfcBuildingStorey":
 
-                print(obj.name)
+                print("Entity: " + obj.name)
 
                 scene.b2a_props.storeys.append(obj)
 
