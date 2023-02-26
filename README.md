@@ -1,6 +1,6 @@
 # BBIM2ARM
 
-![Header](https://github.com/Naxela/BBIM2ARM/raw/main/Header.png)
+![Header](https://github.com/Naxela/BBIM2ARM/raw/main/IFC2ARM_Screen.png)
 
 BIM2ARM is an addon for Blender that seeks merge the constructive powers of BlenderBIM with the visual powers of Armory3D to open up for easy and interactive web experiences. The addon is mainly intended for usage in the AEC industry for visualizing and communicating designs.
 
