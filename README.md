@@ -1,5 +1,7 @@
 # BBIM2ARM
 
+![Header](https://github.com/Naxela/BBIM2ARM/raw/main/Header.png)
+
 BIM2ARM is an addon for Blender that seeks merge the constructive powers of BlenderBIM with the visual powers of Armory3D to open up for easy and interactive web experiences. The addon is mainly intended for usage in the AEC industry for visualizing and communicating designs.
 
 What does it actually do?
@@ -12,6 +14,8 @@ It only takes 4-5 steps from importing an IFC to have a result:
 3. Select Configure Armory (Setup graphics, resolution, camera, property inspection, and more)
 4. Select Start (Quickly preview what it's going to look like)
 5. Select your preferred platform - HTML5 for a web experience, or Binary for an executable.
+
+![Animation](https://github.com/Naxela/BBIM2ARM/raw/main/BIM2ARM_Animation.gif) 
 
 Features:
 - Easily transform your IFC to something your client can view 
@@ -47,3 +51,5 @@ Roadmap:
 - IFC Class Toggle
 - Revit light placement w. IES support
 - Additional custom data input (ie. clickable image wall detailing, custom spreadsheets)
+
+![Animation](https://github.com/Naxela/BBIM2ARM/raw/main/Screenshot.jpg)
