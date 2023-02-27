@@ -30,14 +30,12 @@ What's the catch?
 
 
 Roadmap:
-- Place PDF at cursor/empty? Auto-detect DPI? Sections, fasade, etc.
-- Support for better classification overview?
-- Integrated HTML5 Preloading (div w. gif overlay, integrated call to hide on init?)
+- Support for better classification overview
+- Integrated HTML5 Preloading
 - 4D, 5D, 6D, 7D support?
 - Physics setup with walkable players
 - Expanded/integrated material replacement database
-- PDF Plan alignment tool:
--- Python: PDF to JPG, pdf2image library => High vs. Low DPI => Use grids for alignment?
+- PDF Plan alignment tool
 - Placeholder class replacement
 - Better support for BIM properties
 - Support for viewing IFC Schedules
