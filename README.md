@@ -30,6 +30,7 @@ What's the catch?
 
 
 Roadmap:
+- Add optional pipeline for preparing to other engines (three.js/babylon.js/Godot)
 - Support for better classification overview
 - Integrated HTML5 Preloading
 - 4D, 5D, 6D, 7D support?
