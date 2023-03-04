@@ -1,5 +1,7 @@
 package arm;
 
+using StringTools;
+
 import zui.*;
 import iron.object.Object;
 import iron.math.Vec4;
@@ -311,14 +313,123 @@ class BIMInspector extends iron.Trait {
 	//Deflate objects
 	function deflateObject(object){
 		var iteratorAccess:haxe.DynamicAccess<Dynamic> = object;
+		var header = "";
+		var value = "";
 
+		// for (idx => key in iteratorAccess) {
+		// 	if (Std.is(key, String)) {
+		// 		ui.text(idx + ": " + key);
+		// 	} else {
+		// 		deflateObject(key);
+		// 	}
+		// }
 		for (idx => key in iteratorAccess) {
-			if (Std.is(key, String)) {
-				ui.text(idx + ": " + key);
-			} else {
-				deflateObject(key);
-			}
+
+			//trace(idx + " | " + key);
+
+			var header = key.Name;
+			var value = key.NominalValue;
+
+			//trace(key.Name);
+			//trace(key.NominalValue);
+			//ui.text(idx + "[A]:[B] " + key);
+			ui.text(header + ": " + value);
+
+			//key should contain both name and value
+
+
+			//idx is always a string
+
+			// if(StringTools.startsWith(key,"{")){
+			// 	trace("ABCD");
+			// } else {
+			// 	trace("EFG");
+			// }
+
+			// if( StringTools.startsWith(key, "{") ){
+			// 	var keyAccess = haxe.Json.parse(key);
+			// 	ui.text(idx + "[A]:[B] " + keyAccess.Name);
+			// } else {
+			// 	ui.text(idx + "[A]:[B] " + key);
+			// }
+
+
+			// //value['NominalValue']
+
+			// if (Std.is(key, String)) {
+
+			// 	if(idx == "Name"){
+			// 		header = key;
+			// 	}
+			// 	if(idx == "NominalValue"){
+			// 		value = key;
+			// 	}
+
+			// } else {
+
+			// 	//value = "[OBJECT]";
+
+			// 	value = key[0];
+
+			// 	deflateObject(key);
+
+			// }
+
+			// if(header != ""){
+
+			// 	if(value != ""){
+
+			// 		if(Std.is(value, String)){
+
+			// 			ui.text(header + ": " + value);
+
+			// 		} else {
+
+			// 			//Check if it exists first?
+			// 			//ui.text(header + ": " + value);
+			// 			ui.text(header + ": " + value);
+
+			// 		}
+
+			// 	} else {
+
+			// 		//SKIP THIS
+			// 		value = "??? SKIP";
+
+			// 		if(Std.is(value, String)){
+
+			// 			ui.text(header + ": " + value);
+
+			// 		} else {
+
+			// 			//Check if it exists first?
+			// 			ui.text(header + ": " + value);
+						
+			// 		}
+
+			// 	}
+
+			// }
+
+			// if (Std.is(key, String)) {
+			// 	if(idx == "Name"){
+			// 		header = key;
+			// 	}
+			// 	if(idx == "NominalValue"){
+			// 		value = key;
+			// 	}
+			// 	//ui.text("[STRING]");
+			// 	ui.text(header + ": " + value);
+			// } else {
+			// 	ui.text(header + ": " + value);
+			// 	ui.text("[DEFLATE]------------------");
+			// 	deflateObject(key);
+			// }
 		}
+
+		//ui.text(header + ": " + value);
+
+
 	}
 
 
