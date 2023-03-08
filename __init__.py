@@ -396,6 +396,10 @@ def exposeProperties(obj):
     obj.arm_propertylist[-1].string_prop = json.dumps(propsets, ensure_ascii=False)
 
     obj.arm_propertylist.add()
+    obj.arm_propertylist[-1].name_prop = "IFCCLASS"
+    obj.arm_propertylist[-1].string_prop = getObjElement(obj).is_a() 
+
+    obj.arm_propertylist.add()
     obj.arm_propertylist[-1].name_prop = "BIMHIERARCHY"
     obj.arm_propertylist[-1].string_prop = getParentHierarchy(obj)
 
