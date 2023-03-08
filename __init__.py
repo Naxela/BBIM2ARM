@@ -17,7 +17,7 @@ bl_info = {
     "author" : "Alexander Kleemann",    
     "description" : "BIM to Armory",
     "blender" : (3, 3, 0),
-    "version" : (0, 1, 3),
+    "version" : (0, 1, 5),
     "location" : "View3D > Sidebar",
     "warning" : "",
     "support": "COMMUNITY",
