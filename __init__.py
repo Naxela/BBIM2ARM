@@ -343,8 +343,8 @@ def exposeProperties(obj):
     #return True
     blenderbim.bim.ifc.IfcStore.get_file()
     
-    if not ifcopenshell.api.layer.data.Data.is_loaded:
-        ifcopenshell.api.layer.data.Data.load(blenderbim.bim.ifc.IfcStore.get_file())
+    # if not ifcopenshell.api.layer.data.Data.is_loaded:
+    #     ifcopenshell.api.layer.data.Data.load(blenderbim.bim.ifc.IfcStore.get_file())
     
     #Ensure loaded attribute data
     blenderbim.bim.module.attribute.data.AttributesData.load()
@@ -360,14 +360,14 @@ def exposeProperties(obj):
         if attribute:
             propsets[attribute["name"]] = attribute["value"]
         
-    #IFC Layer !!OBS IF THERE IS NO LAYERS PRESENT???
-    if obj.data.BIMMeshProperties.ifc_definition_id in ifcopenshell.api.layer.data.Data.items:
-        layer_id = ifcopenshell.api.layer.data.Data.items[obj.data.BIMMeshProperties.ifc_definition_id]
-        for layer in ifcopenshell.api.layer.data.Data.layers:
-            if layer:
-                layer_data = ifcopenshell.api.layer.data.Data.layers[layer]
-                if layer_data['id'] == layer_id[0]:
-                    propsets["Layer"] = layer_data['Name']
+    # #IFC Layer !!OBS IF THERE IS NO LAYERS PRESENT???
+    # if obj.data.BIMMeshProperties.ifc_definition_id in ifcopenshell.api.layer.data.Data.items:
+    #     layer_id = ifcopenshell.api.layer.data.Data.items[obj.data.BIMMeshProperties.ifc_definition_id]
+    #     for layer in ifcopenshell.api.layer.data.Data.layers:
+    #         if layer:
+    #             layer_data = ifcopenshell.api.layer.data.Data.layers[layer]
+    #             if layer_data['id'] == layer_id[0]:
+    #                 propsets["Layer"] = layer_data['Name']
         
     for pset in blenderbim.bim.module.pset.data.ObjectPsetsData.data['psets']:
         spropsets = {}
@@ -890,6 +890,8 @@ class B2A_Prepare(bpy.types.Operator):
         #TODO: Clean empty collections
 
         scene.b2a_props.ifc_prepared = True
+
+        print("Project prepared")
 
         return {'FINISHED'}
 
