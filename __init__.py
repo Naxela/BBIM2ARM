@@ -58,7 +58,9 @@ class B2A_Props(): #scene.b2a_props
     storeys = []
     deployed = False
 
-def getProjectFolder():
+def getProjectFolder(self):
+
+    scene = bpy.context.scene
 
     if bpy.data.is_saved:
 
@@ -66,7 +68,8 @@ def getProjectFolder():
 
     else:
 
-        return
+        self.report({"WARNING"}, "Please save the project first!")
+        return os.path.dirname(os.path.realpath(scene.BIMProperties.ifc_file))
 
 def getScript(scriptInt, properties):
 
@@ -232,6 +235,92 @@ class FlyNavigation extends Trait {
 
     return sScript
 
+classDisciplineList = """
+{
+    "default": "Architecture",
+    "Architecture":
+        [
+            "IfcWall",
+            "IfcWallStandard",
+            "IfcDoor",
+            "IfcWindow",
+            "IfcSlab",
+            "IfcGrid",
+            "IfcGridAxis",
+            "IfcStair",
+            "IfcBuildingElementProxy",
+            "IfcAnnotation",
+            "IfcCovering",
+            "IfcCurtainWall",
+            "IfcOpeningElement",
+            "IfcBuildingStorey",
+            "IfcRoof",
+            "IfcBuildingElementPart",
+            "IfcRailing",
+            "IfcRamp",
+            "IfcTransportElement"
+        ],
+    "Structural":
+        [
+            "IfcBeam",
+            "IfcColumn",
+            "IfcReinforcingBar",
+            "IfcAssembly",
+            "IfcGroup",
+            "IfcReinforcementMesh",
+            "IfcMechanicalFastener",
+            "IfcPlate"
+        ],
+    "Building Services":
+        [
+            "IfcFlowTerminal",
+            "IfcFlowSegment",
+            "IfcAirTerminal",
+            "IfcFlowTreatmentDevice",
+            "IfcFlowFitting",
+            "IfcDistributionControlElement"
+        ],
+    "Electrical":
+        [
+            "IfcCableCarrierFittingType",
+            "IFCCableCarrierSegment",
+            "IfcElectricApplianceType",
+            "IfcAlarmType",
+            "IfcFireSuppressionTerminalType",
+            "IfcElectricApplianceType",
+            "IfcLightFixtureType",
+            "IfcSwitchingDeviceType"
+        ],
+    "Landscape":
+        [
+            "IfcSite"
+        ],
+    "Plumbing":
+        [
+            "IfcPipeSegment",
+            "IfcValveType",
+            "IfcPipeFitting"
+        ],
+    "Sprinkler":
+        [
+            "IfcFireSuppressionTerminalType"
+        ],
+    "HVAC":
+        [
+            "IfcDuctFitting",
+            "IfcDuctSegment",
+            "IfcZone",
+            "IfcMedicalDevice",
+            "IfcSpace"
+        ],
+    "Interior":
+    [
+        "IfcFurniture",
+        "IfcSystemFurnitureElement"
+    ]
+}
+"""
+
 def getAddonFolder():
 
     context = bpy.context
@@ -317,6 +406,26 @@ def getParentHierarchy(obj):
     parent_names.reverse()
     return '\\'.join(parent_names)
 
+def getDiscipline(ifcclass, content):
+    
+    matching_discipline = None
+
+    for discipline in content:
+        
+        if discipline != "default":
+        
+            for d_class in content[discipline]:
+                
+                if d_class == ifcclass:
+            
+                    matching_discipline = discipline
+                    
+    if matching_discipline == None:
+        
+        matching_discipline = content["default"]
+        
+    return matching_discipline
+
 def exposeProperties(obj):
     bpy.context.view_layer.objects.active = obj
     
@@ -378,18 +487,23 @@ def exposeProperties(obj):
             
     for qto in blenderbim.bim.module.pset.data.ObjectQtosData.data["qtos"]:
         qpropsets = {}
-        for qsubprop in pset['Properties']:
+        for qsubprop in qto['Properties']:
             qpropsets[qsubprop["Name"]] = qsubprop
         
         propsets[qto["Name"]] = qpropsets
             
     #print(propsets)
+
+    #TODO: GET INHERIT PROPERTIES
+    #TODO: GET QTOS
     
     propset = False
     
     for idx, prop in enumerate(obj.arm_propertylist):
         if prop.name_prop == "BIMDATA":
             obj.arm_propertylist.remove(idx)
+
+    objClass = getObjElement(obj).is_a() 
             
     obj.arm_propertylist.add()
     obj.arm_propertylist[-1].name_prop = "BIMDATA"
@@ -397,11 +511,15 @@ def exposeProperties(obj):
 
     obj.arm_propertylist.add()
     obj.arm_propertylist[-1].name_prop = "IFCCLASS"
-    obj.arm_propertylist[-1].string_prop = getObjElement(obj).is_a() 
+    obj.arm_propertylist[-1].string_prop = objClass
 
     obj.arm_propertylist.add()
     obj.arm_propertylist[-1].name_prop = "BIMHIERARCHY"
     obj.arm_propertylist[-1].string_prop = getParentHierarchy(obj)
+
+    obj.arm_propertylist.add()
+    obj.arm_propertylist[-1].name_prop = "DISCIPLINE"
+    obj.arm_propertylist[-1].string_prop = getDiscipline(objClass, json.loads(classDisciplineList))
 
 class B2A_LoadIFC(bpy.types.Operator):
     bl_idname = "b2a.load"
@@ -483,17 +601,17 @@ class B2A_Prepare(bpy.types.Operator):
         bpy.context.scene.name = "BIM_MainScene"
 
         #Set no armory export
-        bpy.data.scenes["BIM_MainScene"].arm_export = False
+        #bpy.data.scenes["BIM_MainScene"].arm_export = False
 
         #Create a new scene
-        bpy.data.scenes.new(name='BIM2ARM')
+        #bpy.data.scenes.new(name='BIM2ARM')
 
         #Set active scene
-        bpy.context.window.scene = bpy.data.scenes["BIM2ARM"]
+        #bpy.context.window.scene = bpy.data.scenes["BIM2ARM"]
 
-        for obj in bpy.data.scenes["BIM_MainScene"].objects:
+        #for obj in bpy.data.scenes["BIM_MainScene"].objects:
             
-            bpy.data.scenes["BIM2ARM"].collection.objects.link(obj)
+        #    bpy.data.scenes["BIM2ARM"].collection.objects.link(obj)
 
         if scene.BIMProperties.ifc_file != "":
             scene.b2a_props.ifc_loaded = True
@@ -524,12 +642,17 @@ class B2A_Prepare(bpy.types.Operator):
         for obj in bpy.context.scene.objects:
 
             if obj.type == "MESH":
+
+                obj.data = obj.data.copy()
             
-                obj.select_set(True)
+                #obj.select_set(True)
 
         print("Making objects to single user: Apply Single User")
         
-        bpy.ops.object.make_single_user(object=True, obdata=True, material=False, animation=False, obdata_animation=False)
+        #This takes aaaaaaaages...
+        #bpy.ops.object.make_single_user(object=True, obdata=True, material=False, animation=False, obdata_animation=False)
+        #Copy data instead
+
 
         #Deselect all
         print("Deselecting all")
@@ -600,6 +723,12 @@ class B2A_Prepare(bpy.types.Operator):
                 bpy.ops.preferences.asset_library_add(directory=b2a_asset_path)
                 bpy.context.preferences.filepaths.asset_libraries[-1].name = "B2A_Library"
 
+        if scene.add_b2a_ifc_pack:
+
+            libPath = getProjectFolder(self) + "/Libraries"
+            os.makedirs(libPath, exist_ok=True)
+            shutil.copytree(os.path.join(getAddonFolder(),"assets","B2A_IFC_Pack"), os.path.join(getProjectFolder(self),'Libraries','B2A_IFC_Pack'), dirs_exist_ok=True)
+        
         if scene.convert_materials:
 
             print("Converting materials")
@@ -804,14 +933,16 @@ class B2A_Prepare(bpy.types.Operator):
             
             for obj in excluded_objects:
 
-                print("Adding physics to: " + obj.name)
+                if scene.add_physics:
 
-                bpy.context.view_layer.objects.active = obj
+                    print("Adding physics to: " + obj.name)
 
-                bpy.ops.rigidbody.object_add()
-                obj.rigid_body.type = "PASSIVE"
-                obj.rigid_body.collision_shape = 'MESH'
-                obj.rigid_body.mesh_source = 'BASE'
+                    bpy.context.view_layer.objects.active = obj
+
+                    bpy.ops.rigidbody.object_add()
+                    obj.rigid_body.type = "PASSIVE"
+                    obj.rigid_body.collision_shape = 'MESH'
+                    obj.rigid_body.mesh_source = 'BASE'
 
         else:
 
@@ -834,15 +965,16 @@ class B2A_Prepare(bpy.types.Operator):
             for obj in bpy.context.scene.objects:
 
                 if obj.type == "MESH":
+
+                    if scene.add_physics:
             
+                        print("Adding physics to: " + obj.name)
 
-                    #print("Adding physics to: " + obj.name)
-
-                    #bpy.context.view_layer.objects.active = obj
-                    #bpy.ops.rigidbody.object_add()
-                    obj.rigid_body.type = "PASSIVE"
-                    obj.rigid_body.collision_shape = 'MESH'
-                    obj.rigid_body.mesh_source = 'BASE'
+                        #bpy.context.view_layer.objects.active = obj
+                        #bpy.ops.rigidbody.object_add()
+                        obj.rigid_body.type = "PASSIVE"
+                        obj.rigid_body.collision_shape = 'MESH'
+                        obj.rigid_body.mesh_source = 'BASE'
 
                 #TODO - Select joined
 
@@ -1056,7 +1188,7 @@ class B2A_CreateCSVTemplate(bpy.types.Operator):
 
         print(csv_data)
 
-        csv_path = os.path.join(getProjectFolder(), "replacement_schema.csv")
+        csv_path = os.path.join(getProjectFolder(self), "replacement_schema.csv")
 
         with open(csv_path, 'w', encoding='utf-8') as file:
             writer = csv.DictWriter(file, fieldnames=csv_header)
@@ -1235,8 +1367,8 @@ class B2A_Configure(bpy.types.Operator):
 
             #armSourcesFolder = getProjectFolder() + "/Sources/arm/"
 
-            armSourcesFolder = getProjectFolder() + "/Sources/arm"
-            armCanvasFolder = getProjectFolder() + "/Bundled/canvas"
+            armSourcesFolder = getProjectFolder(self) + "/Sources/arm"
+            armCanvasFolder = getProjectFolder(self) + "/Bundled/canvas"
 
             flvScript = getScript(0,[str(scene.camera_speed), str(scene.camera_easing)])
             #print(flvScript)
@@ -1247,7 +1379,7 @@ class B2A_Configure(bpy.types.Operator):
 
             #os.path.join(getAddonFolder,"assets/canvas")
             #if not os.path.isdir(os.path.join(getAddonFolder(),"assets","canvas")): getProjectFolder() + "/Bundled/canvas"
-            shutil.copytree(os.path.join(getAddonFolder(),"assets","canvas"), os.path.join(getProjectFolder(),'Bundled','canvas'), dirs_exist_ok=True)
+            shutil.copytree(os.path.join(getAddonFolder(),"assets","canvas"), os.path.join(getProjectFolder(self),'Bundled','canvas'), dirs_exist_ok=True)
 
             shutil.copy(os.path.join(getAddonFolder(),"scripts","BIMInspector.hx"), os.path.join(armSourcesFolder,"BIMInspector.hx"))
 
@@ -1430,11 +1562,13 @@ class B2A_Configure(bpy.types.Operator):
         bpy.data.materials["B2A_SelectorMat"].node_tree.nodes['Principled BSDF'].inputs.get("Base Color").default_value = (0,2,0,0)
 
         #Clean unused slots
-        for obj in bpy.context.scene.objects:
-            if obj.type == "MESH":
-                bpy.context.view_layer.objects.active = obj
-                print("Removing unused slots for: " + obj.name)
-                bpy.ops.object.material_slot_remove_unused()
+        #TODO: Find some way to optimize this!
+        if scene.clean_unused_matslots:
+            for obj in bpy.context.scene.objects:
+                if obj.type == "MESH":
+                    bpy.context.view_layer.objects.active = obj
+                    print("Removing unused slots for: " + obj.name)
+                    bpy.ops.object.material_slot_remove_unused()
 
         return {'FINISHED'}
 
@@ -1490,6 +1624,12 @@ class SCENE_PT_B2A_panel (Panel):
         row.prop(scene, "remove_spaces")
         row = box.row(align=True)
         row.prop(scene, "add_b2a_lib")
+        row = box.row(align=True)
+        row.prop(scene, "add_b2a_ifc_pack")
+        row = box.row(align=True)
+        row.prop(scene, "add_physics")
+        row = box.row(align=True)
+        row.prop(scene, "clean_unused_matslots")
         
         row = box.row(align=True)
         row.prop(scene, "convert_materials")
@@ -1706,8 +1846,11 @@ def register():
     bpy.types.Scene.remove_spaces = bpy.props.BoolProperty(name="Remove spaces", default=True, description="Remove all spaces from the file")
     bpy.types.Scene.add_physics = bpy.props.BoolProperty(name="Enable physics", default=False, description="Heavy, but required to select objects from 3D view")
     
-    bpy.types.Scene.add_b2a_lib = bpy.props.BoolProperty(name="Add B2A Library", default=True, description="Add the BIM2ARM asset library")
-    
+    bpy.types.Scene.add_b2a_lib = bpy.props.BoolProperty(name="Add B2A Library", default=True, description="Add the BBIM2ARM asset library")
+    bpy.types.Scene.add_b2a_ifc_pack = bpy.props.BoolProperty(name="Add B2A IFC Logic Package", default=True, description="Adds the BBIM2ARM IFC Logic Package (Requires restart or Script Reload)")
+    bpy.types.Scene.add_physics = bpy.props.BoolProperty(name="Add element physics", default=True, description="Add physics necessary for selecting on elements.")
+    bpy.types.Scene.clean_unused_matslots = bpy.props.BoolProperty(name="Clean unused material slots", default=True, description="Clean unused material slots.")
+
     bpy.types.Scene.space_setup = EnumProperty(
         items = [('None', 'None', 'None'),
                  ('Spatial', 'Spatial Volumes', '')],
@@ -1807,6 +1950,14 @@ def register():
                  ('Presentation', 'Presentation', 'Presentation setting. Corresponds to 600 DPI in Revit'),
                  ('Custom', 'Custom', 'Set your own DPI')],
                 name = "", description="DPI of the selected plan", default='High')
+    
+    # bpy.types.Scene.configurePersona = EnumProperty(
+    #     items = [('Babylon.js', 'Babylon', 'Babylon.js'),
+    #              ('Unreal', 'Unreal', 'Unreal'),
+    #              ('Unity3D', 'Unity3D', 'Unity3D'),
+    #              ('Three.js', 'Three', 'Three.js'),
+    #              ('Armory3D', 'Armory3D', 'Armory')],
+    #             name = "", description="Select configuration persona", default='High')
 
     # bpy.types.Scene.levelPlanDPI = EnumProperty(
     #         items = [('Low', 'Low', 'Low setting. Corresponds to 72 DPI in Revit'),

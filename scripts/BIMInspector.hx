@@ -314,7 +314,7 @@ class BIMInspector extends iron.Trait {
 	function deflateObject(object){
 		var iteratorAccess:haxe.DynamicAccess<Dynamic> = object;
 		var header = "";
-		var value = "";
+		var value:String = "";
 
 		// for (idx => key in iteratorAccess) {
 		// 	if (Std.is(key, String)) {
@@ -327,13 +327,65 @@ class BIMInspector extends iron.Trait {
 
 			//trace(idx + " | " + key);
 
-			var header = key.Name;
-			var value = key.NominalValue;
+			header = key.Name;
+			//var value = key.NominalValue;
+			var valueAccess:haxe.DynamicAccess<Dynamic> = key.NominalValue;
+
+			if(haxe.Json.stringify(valueAccess).charAt(0) == "{"){
+
+				//TODO: CHECK AT A DEEPER LEVEL
+				//TODO: MAKE THIS RECURSIVE
+
+				// var indexkeys = [];
+
+				// for (idy => subkey in valueAccess) {
+				// 	indexkeys.push(idy + ": " + subkey);
+				// }
+
+				// //trace("{ is first character: OBJECT");
+				// //ui.text(header + ": " + haxe.Json.stringify(valueAccess));
+				// ui.text(header + ": ");
+
+				// for(index in indexkeys){
+				// 	ui.text("        " + index);
+				// }
+				ui.text(header + ": " + haxe.Json.stringify(valueAccess));
+
+			} else {
+				//trace("STRING");
+				ui.text(header + ": " + valueAccess);
+			}
+
+			//var vx = haxe.Json.stringify(valueAccess);
+
+			// for (n in Reflect.fields(valueAccess))
+			// 	trace(Reflect.field(valueAccess, n));
+			//var gString = haxe.Json.parse(valueAccess);
+			//trace(gString);
+
+			// for (idy => subkey in iteratorAccess) {
+
+
+
+			// }
+
+
+			// if(Std.is(value, String)){
+
+			// 	//pass
+
+			// } else {
+
+			// 	value = "OBJECT!";
+
+			// }
 
 			//trace(key.Name);
 			//trace(key.NominalValue);
 			//ui.text(idx + "[A]:[B] " + key);
-			ui.text(header + ": " + value);
+			
+			//THIS WAS COMMENTED
+			//ui.text(header + ": " + value);
 
 			//key should contain both name and value
 
