@@ -13,9 +13,9 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 bl_info = {
-    "name" : "BIM2ARM",
+    "name" : "BBIM2ARM",
     "author" : "Alexander Kleemann",    
-    "description" : "BIM to Armory",
+    "description" : "BBIM to Armory",
     "blender" : (3, 3, 0),
     "version" : (0, 1, 5),
     "location" : "View3D > Sidebar",
@@ -25,7 +25,7 @@ bl_info = {
     "doc_url": "",
 }
 
-import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil, platform, webbrowser, math
+import bpy, blenderbim, ifcopenshell, os, csv, json, sys, importlib, shutil, platform, webbrowser, math, subprocess, time
 import blenderbim.bim.module.root.prop as root_prop
 from bpy.types import Panel
 from blenderbim.bim.ifc import IfcStore
@@ -426,6 +426,39 @@ def getDiscipline(ifcclass, content):
         
     return matching_discipline
 
+def createServer():
+    python_server="""
+import sys, os, time, webbrowser, subprocess
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+
+os.chdir(sys.argv[1])
+
+class CORSRequestHandler(SimpleHTTPRequestHandler):
+    def end_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        return super(CORSRequestHandler, self).end_headers()
+
+def func_run_server(url, port):
+    httpd = HTTPServer((url, port), CORSRequestHandler)
+    httpd.serve_forever()
+    
+func_run_server('localhost', 8080)
+    """
+
+    with open(bpy.path.abspath("//server.py"),"w") as f:
+        f.write(python_server)
+
+    pythonpath = os.path.abspath(sys.executable)
+    
+    #We want to get the blender filename without the extension
+    filepath = bpy.data.filepath
+    filename = os.path.splitext(os.path.basename(filepath))[0]
+
+    process = subprocess.Popen([pythonpath, bpy.path.abspath("//server.py"), bpy.path.abspath("//build_" + filename + "/html5")])
+    webbrowser.open('http://localhost:8080')
+
 def exposeProperties(obj):
     bpy.context.view_layer.objects.active = obj
     
@@ -613,6 +646,50 @@ class B2A_Prepare(bpy.types.Operator):
             
         #    bpy.data.scenes["BIM2ARM"].collection.objects.link(obj)
 
+        B2A_Controller = None
+
+        for obj in bpy.context.scene.objects:
+            if obj.type != "MESH":
+                if getObjElement(obj).is_a() == "IfcProject":
+                    B2A_Controller = obj
+                    print("IfcProject found")
+                else:
+                    print(getObjElement(obj).is_a())
+
+        # need a top-level B2A element? => Get the IFC Project element
+        if B2A_Controller:
+            B2A_Controller.arm_propertylist.add()
+            B2A_Controller.arm_propertylist[-1].name_prop = "LEVELS"
+
+            levels = {"levels":[]}
+
+            for lvl in bpy.context.scene.objects:
+                if lvl.name.startswith('IfcBuildingStorey'):
+                    levels["levels"].append(lvl.name)
+                    #TODO: GET attribute name
+                    #?? Dict {"Plan 1":obj, "Plan 2":obj} => Levels["Plan 01"] => obj
+
+            #B2A_Controller.arm_propertylist[-1].string_prop = str(levels)
+
+            levels = json.dumps(levels, indent=0, sort_keys=True)
+
+            str_to_write = ''
+            skip = 0
+            for char in levels:
+                if (skip == 1) and ((char == '\n') or (char == ' ')):
+                    pass
+                elif (char == '[') :
+                    skip = 1
+                    str_to_write = str_to_write + char
+                elif (char == ']') :
+                    skip = 0
+                    str_to_write = str_to_write + char
+                else :
+                    str_to_write = str_to_write + char
+
+            B2A_Controller.arm_propertylist[-1].string_prop = levels
+            
+
         if scene.BIMProperties.ifc_file != "":
             scene.b2a_props.ifc_loaded = True
 
@@ -636,6 +713,13 @@ class B2A_Prepare(bpy.types.Operator):
         #Make single-user
         bpy.data.worlds["Arm"].arm_batch_meshes = True
         bpy.data.worlds["Arm"].arm_batch_materials = False
+
+        #TODO:
+        #Make a list of all plans, add the following info to scene as props:
+        #Georeferencing (Coordinate + Latitude) + EPSG code + Link to EPSG.io
+        #List of plans (That can be toggled through)
+        #Project parameters, software info?
+        #Schedule explorer?
 
         print("Making objects to single user: Selecting")
 
@@ -869,8 +953,8 @@ class B2A_Prepare(bpy.types.Operator):
                 bpy.data.texts[-1].name = "ExcludedIfcClasses"
                 scene.group_exclusion = bpy.data.texts[-1]
 
-            #exclusion_classes = ['IfcWindow', 'IfcWall', 'IfcWallStandardCase', 'IfcDoor']
-            #TODO CHECK LINES COMMENTED OUT
+            #exclusion_classes = ['IfcWindow','IfcWall','IfcWallStandardCase','IfcDoor']
+            #TODO CHECK LINES COMMENTED OUT + NO SPACES!
 
             #exclusion_string = scene.group_exclusion.as_string()
 
@@ -1209,19 +1293,30 @@ class B2A_Play(bpy.types.Operator):
 
         scene = context.scene
 
-        #Setup exporter
+        import arm.make_state as state
 
         if "BIM2ARM_Exporter" in bpy.data.worlds["Arm"].arm_exporterlist:
-
             pass
-
         else:
-
             bpy.ops.arm_exporterlist.new_item()
-
             bpy.data.worlds["Arm"].arm_exporterlist[-1].name = "BIM2ARM_Exporter"
 
-        bpy.ops.arm.play()
+        # bpy.ops.arm.play()
+        bpy.data.worlds['Arm'].arm_exporterlist["BIM2ARM_Exporter"].arm_project_target = "html5"
+        bpy.data.worlds["Arm"].arm_project_html5_popupmenu_in_browser = True
+        
+        #bpy.ops.arm.play()
+        bpy.ops.arm.publish_project()
+
+        while(state.proc_build.returncode == None):
+            time.sleep(1)
+            print("Compiling: " + str(state.proc_build))
+        
+        #############################
+        print("EDIT HTML FILE HERE!")
+
+        print(state.proc_build)
+        createServer()
 
         return {'FINISHED'}
 
@@ -1790,26 +1885,32 @@ class SCENE_PT_B2A_panel (Panel):
         row = box.row(align=True)
         row.operator("b2a.play")
 
-        box = layout.box()
-        row = box.row(align=True)
-        row.label(text="Deploy Armory", icon="FILE_CACHE")
-        row = box.row(align=True)
-        row.label(text="Platform:")
-        row = box.row(align=True)
-        row.prop(scene, "platform")
-        row = box.row(align=True)
-        row.operator("b2a.deploy")
+        #box = layout.box()
+        #row = box.row(align=True)
+        #row.label(text="Deploy Armory", icon="FILE_CACHE")
+        #row = box.row(align=True)
+        #row.label(text="Platform:")
+        #row = box.row(align=True)
+        #row.prop(scene, "platform")
+        #row = box.row(align=True)
+        #row.operator("b2a.deploy")
         #if deployed == True:
-        row = box.row(align=True)
-        row.operator("b2a.explore")
+        #row = box.row(align=True)
+        #row.operator("b2a.explore")
 
-        box = layout.box()
-        row = box.row(align=True)
-        row.label(text="Utilities", icon="FILE_CACHE")
+        #box = layout.box()
+        #row = box.row(align=True)
+        #row.label(text="Utilities", icon="FILE_CACHE")
 
 def get_levels(self, context):
 
     items = []
+
+    # for obj in bpy.context.scene.objects:
+    #     if obj.type != "MESH":
+    #         if getObjElement(obj).is_a() == "IfcBuildingStorey":
+    #             name = obj.name
+    #             items.append((str(name), str(name),''))
 
     for lvl in bpy.context.scene.b2a_props.storeys:
 
